@@ -172,7 +172,7 @@ const KEYS=JACKETS.map(j=>j.id);
 const P=n=>"USF-JP-SD-2026-"+n;
 const DAYS=["月","火","水","木","金","土","日"];
 
-function rm(id,name,scent,playing,sched){return {id,name,scent,playing,sched};}
+function rm(id,name,scent,playing,sched){return {id,name,scent,playing,sched,area:40,gapMin:15};}
 function L(s,e,prog,memo){return {s,e,prog,memo:memo||""};}
 
 const TENANTS=[
@@ -205,6 +205,10 @@ const TENANTS=[
    ]}
  ]}
 ];
+
+// デモ用: 部屋の広さ（㎡）。実際はお客さんが入力。広さで噴霧サイクルが自動算出される
+const DEMO_AREA={"001":80,"002":55,"003":15,"004":25,"005":35};
+TENANTS.forEach(t=>t.stores.forEach(s=>s.rooms.forEach(r=>{ if(DEMO_AREA[r.id]!=null) r.area=DEMO_AREA[r.id]; })));
 
 let ti=0,si=0,ri=0,di=0,mode="room",pick=null,banner="",selSlot=null,pickerTarget="live",pickerQuery="";
 
@@ -243,6 +247,63 @@ function progChips(prog){return prog.map(p=>{const s=LMAP[p[0]];
 function cartFor(r){const base=(TENANTS[ti].stores[si].id+r.id).split('').reduce((a,c)=>a+c.charCodeAt(0),0);
   return Array.from({length:12},(_,i)=>Math.round(6+(Math.sin(base*1.3+i*2.7)*0.5+0.5)*92));}
 const CART_COLORS=["#AFA9EC","#FAC775","#C0DD97","#F4C0D1","#9FE1CB","#85B7EB","#888780","#F0997B","#F5C4B3","#7F77DD","#1D9E75","#BA7517"];
+// 噴霧サイクルの式: 1回の噴霧秒数 = 部屋の㎡ + 20（5秒丸め・20秒〜5分でクランプ）
+//   10㎡ → 30秒 / 100㎡ → 120秒（Alex基準）。広い部屋ほど長く噴霧して香りを満たす
+function sprayCfg(area){
+  const a=Math.max(0,+area||0);
+  let on=Math.round((a+20)/5)*5;
+  on=Math.min(300,Math.max(20,on));
+  return {on};
+}
+function fmtDur(s){ if(s<60) return s+"秒"; const m=Math.floor(s/60),x=s%60; return x?(m+"分"+x+"秒"):(m+"分"); }
+function sprayViz(on,g){
+  const seg=`<span style="flex:${on};min-width:6px;height:100%;display:block;background:var(--accent-grad);"></span><span style="flex:${g*60};min-width:14px;height:100%;display:block;"></span>`;
+  return seg.repeat(3);
+}
+function sprayArea(r){
+  const a=r.area||40,g=r.gapMin||15,on=sprayCfg(a).on,cyc=on+g*60,perH=Math.max(1,Math.round(3600/cyc));
+  const gopts=[5,10,15,30,60].map(v=>`<option value="${v}" ${v===g?'selected':''}>${v}分ごと</option>`).join("");
+  return `<div class="card" style="border-radius:var(--border-radius-lg);padding:14px 16px;margin-bottom:14px;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+      <span style="font-size:13px;font-weight:600;letter-spacing:0.2px;"><i class="ti ti-air-conditioning" style="font-size:14px;color:var(--accent);vertical-align:-2px;"></i> 噴霧サイクル設定</span>
+      <span style="font-size:11px;font-weight:600;color:var(--accent);background:var(--accent-soft);border:1px solid rgba(164,118,58,0.3);padding:2px 9px;border-radius:999px;">広さから自動</span>
+    </div>
+    <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:flex-end;">
+      <div style="flex:0 0 auto;">
+        <label style="font-size:12px;color:var(--color-text-secondary);display:block;margin-bottom:5px;">部屋の広さ</label>
+        <div style="display:flex;align-items:center;gap:7px;">
+          <input id="areaIn" type="number" min="1" max="500" value="${a}" oninput="onArea(this.value)" style="width:88px;text-align:right;font-weight:600;">
+          <span style="font-size:14px;color:var(--color-text-secondary);">㎡</span>
+        </div>
+      </div>
+      <div style="flex:1;min-width:150px;background:var(--accent-soft);border:1px solid rgba(164,118,58,0.25);border-radius:13px;padding:9px 15px;">
+        <div style="font-size:11px;color:var(--accent);font-weight:600;letter-spacing:0.3px;margin-bottom:3px;">1回の噴霧時間</div>
+        <div style="display:flex;align-items:baseline;gap:9px;flex-wrap:wrap;">
+          <span id="onBig" style="font-size:26px;font-weight:700;color:var(--accent-ink);line-height:1;">${fmtDur(on)}</span>
+          <span id="onSub" style="font-size:11px;color:var(--color-text-tertiary);">＝ 広さ ${a}㎡ ＋ 20秒</span>
+        </div>
+      </div>
+    </div>
+    <div style="display:flex;gap:9px;flex-wrap:wrap;align-items:center;margin-top:13px;">
+      <label style="font-size:12px;color:var(--color-text-secondary);">噴霧の間隔</label>
+      <select id="gapIn" onchange="onGap(this.value)" style="height:34px;width:auto;">${gopts}</select>
+      <span id="cycSum" style="font-size:12px;color:var(--color-text-secondary);">→ <b style="color:var(--color-text-primary);">${fmtDur(on)}噴霧</b> → <b style="color:var(--color-text-primary);">${g}分休止</b> を繰り返し（約${perH}回/時）</span>
+    </div>
+    <div id="cycViz" style="margin-top:12px;display:flex;align-items:center;height:10px;border-radius:999px;overflow:hidden;background:var(--color-background-tertiary);">${sprayViz(on,g)}</div>
+    <div style="font-size:11px;color:var(--color-text-tertiary);margin-top:9px;line-height:1.5;"><i class="ti ti-info-circle" style="vertical-align:-1px;"></i> 目安です（10㎡=30秒 / 100㎡=2分）。広い部屋ほど長く噴霧して香りを行き渡らせます。香りの強さ・空調に合わせて微調整してください。</div>
+  </div>`;
+}
+function onArea(v){ const n=parseInt(v,10); if(isNaN(n)) return; curRoom().area=Math.max(1,Math.min(500,n)); paintSpray(); }
+function onGap(v){ curRoom().gapMin=+v; paintSpray(); }
+function paintSpray(){
+  const r=curRoom(),a=r.area||40,g=r.gapMin||15,on=sprayCfg(a).on,cyc=on+g*60,perH=Math.max(1,Math.round(3600/cyc));
+  if(!$("onBig")) return;
+  $("onBig").textContent=fmtDur(on);
+  $("onSub").textContent="＝ 広さ "+a+"㎡ ＋ 20秒";
+  $("cycSum").innerHTML="→ <b style=\"color:var(--color-text-primary);\">"+fmtDur(on)+"噴霧</b> → <b style=\"color:var(--color-text-primary);\">"+g+"分休止</b> を繰り返し（約"+perH+"回/時）";
+  $("cycViz").innerHTML=sprayViz(on,g);
+}
+
 function cartArea(r){
   const lv=cartFor(r),low=lv.filter(v=>v<20).length;
   const cells=lv.map((v,i)=>`<div style="flex:1;min-width:0;text-align:center;">
@@ -343,6 +404,7 @@ function renderRoom(){
 
   ${cartArea(r)}
   ${statusArea()}
+  ${sprayArea(r)}
 
   <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
     <span style="font-size:14px;font-weight:600;letter-spacing:0.2px;color:var(--color-text-primary);">香り配信スケジュール</span>
