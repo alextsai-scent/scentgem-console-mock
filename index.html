@@ -120,11 +120,26 @@ img{display:block;}
 
 @media (max-width:720px){
  body{padding:14px 12px 36px;}
- .topbar{position:static;top:0;}
+ .topbar{position:sticky;top:8px;padding:10px 12px;}
+ .brand-title{font-size:14px;}
+ /* selects drop to their own full-width row, easy to tap */
+ .topbar select{flex:1 1 calc(50% - 6px);min-width:0!important;height:40px;}
  .shell{flex-direction:column;gap:14px!important;}
- .sidebar{width:100%!important;}
- #roomlist{flex-direction:row!important;overflow-x:auto;flex-wrap:nowrap;padding-bottom:4px;-webkit-overflow-scrolling:touch;}
- #roomlist .room-btn{min-width:170px;flex-shrink:0;}
+ .sidebar{width:100%!important;padding:11px 11px 9px;}
+ /* room list becomes a smooth, snapping horizontal rail */
+ #roomlist{
+  flex-direction:row!important;flex-wrap:nowrap;gap:8px!important;
+  overflow-x:auto;overflow-y:hidden;
+  -webkit-overflow-scrolling:touch;overscroll-behavior-x:contain;touch-action:pan-x;
+  scroll-snap-type:x proximity;
+  margin:0 -11px;padding:2px 11px 10px;scrollbar-width:none;
+ }
+ #roomlist::-webkit-scrollbar{display:none;height:0;}
+ #roomlist .room-btn{min-width:208px;flex-shrink:0;scroll-snap-align:start;}
+}
+@media (max-width:420px){
+ #roomlist .room-btn{min-width:185px;}
+ .seg-tab{font-size:12px!important;}
 }
 </style>
 </head>
