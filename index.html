@@ -324,7 +324,9 @@ function sprayArea(r){
   </div>`;
 }
 function onArea(v){ const n=parseInt(v,10); if(isNaN(n)) return; curRoom().area=Math.max(1,Math.min(500,n)); paintSpray(); }
-function onGap(v){ curRoom().gapMin=+v; if(isLive()) return renderPanel(); paintSpray(); }
+function onGap(v){ curRoom().gapMin=+v; if(isLive()){ try{localStorage.setItem('live_gap_'+curRoom().id,String(+v));}catch{}
+    const ss=LIVE.session; if(ss&&(ss.state==='scheduled'||ss.state==='running'||ss.state==='paused')) banner="間隔を"+v+"分に変更しました。送信済みの予約（"+ss.steps[0].start+"〜）にはまだ反映されていません。枠をタップして「再送信（予約を置き換え）」を押すと新しい間隔で動きます";
+    return renderPanel(); } paintSpray(); }
 function paintSpray(){
   const r=curRoom(),a=r.area||40,g=r.gapMin||15,on=sprayCfg(a).on,cyc=on+g*60,perH=Math.max(1,Math.round(3600/cyc));
   if(!$("onBig")) return;
@@ -681,7 +683,7 @@ const _onTenant=onTenant; onTenant=function(){ _onTenant(); if(isLive()){ di=tod
 const _selRoom=selRoom; selRoom=function(i){ _selRoom(i); if(isLive()){ di=todayIdx(); renderPanel(); livePoll(true); } };
 
 if(location.hash.indexOf("picker")>=0){mode="picker";}
-fillSel();renderList();if(isLive()){di=todayIdx();}renderPanel();
+fillSel();renderList();if(isLive()){di=todayIdx(); try{const g=+localStorage.getItem('live_gap_'+curRoom().id); if(g>0) curRoom().gapMin=g;}catch{} }renderPanel();
 if(isLive()) liveStart();
 </script>
 </body>
