@@ -292,7 +292,7 @@ function sprayArea(r){
           ? `<button onclick="liveSaveGap()" class="btn btn-primary" style="font-size:12px;padding:7px 13px;cursor:pointer;font-weight:600;border-radius:var(--border-radius-md);"><i class="ti ti-device-floppy" style="vertical-align:-2px;"></i> 保存（予約の以降を${g}分ごとに）</button><span style="font-size:11px;color:var(--color-text-danger);">予約は今 ${cur}分ごと</span>`
           : `<span style="font-size:11px;color:var(--color-text-success);"><i class="ti ti-circle-check" style="vertical-align:-1px;"></i> 予約に反映済み（${cur}分ごと）</span>`; })()}
     </div>
-    <div id="cycViz" style="margin-top:12px;display:flex;align-items:center;height:10px;border-radius:999px;overflow:hidden;background:var(--color-background-tertiary);">${sprayViz(on,g)}</div>
+    <div id="liveNow" style="margin-top:12px;">${liveNowHtml()}</div>
   </div>`;
   }
   const a=r.area||40,g=r.gapMin||15,on=sprayCfg(a).on,cyc=on+g*60,perH=Math.max(1,Math.round(3600/cyc));
@@ -641,6 +641,23 @@ function syncSessionSlot(){
   r.sched[d].push(sl); r.sched[d].sort((a,b)=>t2m(a.s)-t2m(b.s));
   if(mode==="room" && $("panel") && !$("liveCard")) return; 
 }
+
+// 今の状態（噴霧中 / インターバル中 / 停止中）— 1秒ごとに描き直す
+function fmtMMSS(sec){ sec=Math.max(0,Math.round(sec)); return Math.floor(sec/60)+':'+String(sec%60).padStart(2,'0'); }
+function liveNowHtml(){
+  const now=Date.now()+(LIVE.offset||0); const ss=LIVE.session; const r=curRoom(); const on=liveBurstSec(r.scent), g=r.gapMin||5;
+  const bar=(pct,color,label,sub)=>`<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:6px;"><span style="font-size:13px;font-weight:600;color:${color};">${label}</span><span style="font-size:12px;color:var(--color-text-secondary);">${sub||''}</span></div>
+    <div style="height:10px;border-radius:999px;overflow:hidden;background:var(--color-background-tertiary);"><div style="height:100%;width:${Math.max(0,Math.min(100,pct))}%;background:${color};transition:width 1s linear;"></div></div>`;
+  if(LIVE.phase==='spraying' && LIVE.sprayUntil){ const total=(LIVE.sprayUntil-(LIVE.sprayStarted||LIVE.sprayUntil-on*1000))/1000, left=(LIVE.sprayUntil-now)/1000;
+    if(left>0) return bar(100*left/total,'#2e9e5b','● 噴霧中','残り '+Math.ceil(left)+'秒（'+Math.round(total)+'秒噴霧）'); }
+  if(ss && (ss.state==='running'||ss.state==='scheduled') && ss.next_burst){ const left=(ss.next_burst-now)/1000; const cur=ss.current_step!=null?ss.steps[ss.current_step]:null, nxt=ss.next_step!=null?ss.steps[ss.next_step]:null;
+    if(cur){ const gap=cur.gapMin*60; return bar(100*(1-left/gap),'var(--accent)','インターバル中','次の噴霧まで '+fmtMMSS(left)+'（'+cur.gapMin+'分ごと ・ '+cur.name+'）'); }
+    if(nxt) return bar(0,'var(--color-text-secondary)','開始待ち',nxt.start+' に '+nxt.name+' を開始（あと '+fmtMMSS(left)+'）'); }
+  if(ss && ss.state==='paused') return bar(0,'var(--color-text-secondary)','一時停止中','枠をタップして「▶ 再開」で続きから');
+  return `<div style="font-size:12px;color:var(--color-text-tertiary);margin-bottom:6px;">■ 停止中 ・ 再生すると ${fmtDur(on)} 噴霧、予約中は ${g}分ごとに繰り返し</div><div style="display:flex;align-items:center;height:10px;border-radius:999px;overflow:hidden;background:var(--color-background-tertiary);">${sprayViz(on,g)}</div>`;
+}
+function liveTick(){ const el=$("liveNow"); if(el && isLive()){ el.innerHTML=liveNowHtml(); } }
+setInterval(liveTick,1000);
 function paintLive(){ if(!isLive()||mode!=="room") return; const el=$("liveCard"); if(el) el.innerHTML=liveArea(curRoom()); const h=$("idLine"); if(h) h.innerHTML=liveIdLine(curRoom()); }
 async function livePoll(force){
   if(!isLive() || LIVE.busy) return; LIVE.busy=true;
@@ -652,7 +669,11 @@ async function livePoll(force){
       if(force || t-(LIVE.lastSt||0)>30000){ const uids=roomUids(curRoom()).filter(u=>LIVE.devices.find(d=>d.device_uid===u&&d.online));
         if(uids.length){ const s=await hub('/api/command',{method:'POST',body:JSON.stringify({uids,cmd:'get_status'})}); LIVE.status=LIVE.status||{}; (s.results||[]).forEach(x=>{ if(x.ok) LIVE.status[x.uid]=x.response; }); } LIVE.lastSt=t; }
     }
-    const sj=await hub('/api/session'); LIVE.session=sj.session; LIVE.now=sj.now_local; syncSessionSlot();
+    const sj=await hub('/api/session'); LIVE.session=sj.session; LIVE.now=sj.now_local; LIVE.offset=(sj.now||Date.now())-Date.now();
+    // 手動「再生」の噴霧中はそちらを優先（サーバーのセッションとは独立）
+    if(LIVE.manualUntil && Date.now()+LIVE.offset<LIVE.manualUntil){ LIVE.phase='spraying'; LIVE.sprayUntil=LIVE.manualUntil; LIVE.sprayStarted=LIVE.manualStart; }
+    else { LIVE.manualUntil=null; LIVE.phase=sj.phase||'idle'; LIVE.sprayUntil=sj.spray_until||null; LIVE.sprayStarted=sj.spray_started||null; }
+    syncSessionSlot();
     const r=curRoom(); if(LIVE.session){ r.playing=LIVE.session.state==='running'; }
   }catch(e){ LIVE.err=LIVE.err||e.message; }
   finally{ LIVE.busy=false; const sig=JSON.stringify((curRoom().sched[todayIdx()]||[]).map(x=>[x.s,x.e,x.memo])); if(sig!==LIVE.lastSig){ LIVE.lastSig=sig; if(mode==="room") renderPanel(); } else paintLive(); if($("roomlist")) renderList(); }
@@ -663,7 +684,7 @@ async function liveBurst(){
   const u=usfSummary(r.scent); if(!u){ banner="レシピが取得できていません（Scentdays カタログ未取得）"; return renderPanel(); }
   const on=u.burstSec;
   try{ const j=await hub('/api/session/burst',{method:'POST',body:JSON.stringify({uids,channels:u.channels,burstSec:on,fanSpeed:u.fan})});
-    const ok=j.results.filter(x=>x.ok).length; r.playing=ok>0; banner=`「${LMAP[r.scent].n}」を ${on}秒 噴霧: ${ok}/${j.results.length}台 OK`+(ok<j.results.length?'（'+j.results.filter(x=>!x.ok).map(x=>x.error).join(', ')+'）':'');
+    const ok=j.results.filter(x=>x.ok).length; r.playing=ok>0; if(ok>0){ LIVE.manualStart=j.started_at||Date.now(); LIVE.manualUntil=j.spray_until||(Date.now()+on*1000); LIVE.offset=(j.now||Date.now())-Date.now(); LIVE.phase='spraying'; LIVE.sprayUntil=LIVE.manualUntil; LIVE.sprayStarted=LIVE.manualStart; } banner=`「${LMAP[r.scent].n}」を ${on}秒 噴霧: ${ok}/${j.results.length}台 OK`+(ok<j.results.length?'（'+j.results.filter(x=>!x.ok).map(x=>x.error).join(', ')+'）':'');
   }catch(e){ banner="送信失敗: "+e.message; }
   renderList(); renderPanel();
 }
