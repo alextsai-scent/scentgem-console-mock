@@ -175,7 +175,16 @@ const DAYS=["月","火","水","木","金","土","日"];
 function rm(id,name,scent,playing,sched){return {id,name,scent,playing,sched,area:40,gapMin:15};}
 function L(s,e,prog,memo){return {s,e,prog,memo:memo||""};}
 
+// ===== LIVE: zen place 中目黒（device-hub 実機連携）=====
+const CALM=P("00025"), AWAKE=P("00011");           // 鎮静=Stillness / 覚醒=Morning Light（表示用ジャケット）
+const LIVE_SERIALS=["ScentGem_20500D1B399A","ScentGem_20500D1B4926"];
 const TENANTS=[
+ {id:"zen", name:"zen place", live:true, stores:[
+   {id:"nkm", name:"中目黒スタジオ", rooms:[
+     Object.assign(rm("001","スタジオ（ScentGem 2台）",CALM,false,{[todayIdx()]:[
+        L("11:00","12:00",[[CALM,40],[AWAKE,20]],"テスト導入") ]}),{serials:LIVE_SERIALS.slice(),area:40,gapMin:5})
+   ]}
+ ]},
  {id:"sa", name:"サンプル法人A（ヨガ）", stores:[
    {id:"sby", name:"渋谷店", rooms:[
      rm("001","Room 001 スタジオA",P("00011"),true,{0:[
@@ -208,7 +217,7 @@ const TENANTS=[
 
 // デモ用: 部屋の広さ（㎡）。実際はお客さんが入力。広さで噴霧サイクルが自動算出される
 const DEMO_AREA={"001":80,"002":55,"003":15,"004":25,"005":35};
-TENANTS.forEach(t=>t.stores.forEach(s=>s.rooms.forEach(r=>{ if(DEMO_AREA[r.id]!=null) r.area=DEMO_AREA[r.id]; })));
+TENANTS.forEach(t=>{ if(t.live) return; t.stores.forEach(s=>s.rooms.forEach(r=>{ if(DEMO_AREA[r.id]!=null) r.area=DEMO_AREA[r.id]; })); });
 
 let ti=0,si=0,ri=0,di=0,mode="room",pick=null,banner="",selSlot=null,pickerTarget="live",pickerQuery="";
 
@@ -334,7 +343,7 @@ function statusArea(){
       <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px;">${progChips(sl.prog)}</div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;">
         <button onclick="openPicker('slot')" class="btn" style="font-size:13px;padding:8px 14px;cursor:pointer;border:1px solid var(--color-border-info);color:var(--color-text-info);border-radius:var(--border-radius-md);background:var(--color-background-primary);font-weight:500;"><i class="ti ti-replace" style="font-size:14px;vertical-align:-2px;"></i> この枠の香りを差し替え</button>
-        <button onclick="playNow()" class="btn btn-primary" style="font-size:13px;padding:8px 14px;cursor:pointer;font-weight:600;border-radius:var(--border-radius-md);"><i class="ti ti-player-play" style="font-size:14px;vertical-align:-2px;"></i> この香りを今すぐ再生</button>
+        <button onclick="playNow()" class="btn btn-primary" style="font-size:13px;padding:8px 14px;cursor:pointer;font-weight:600;border-radius:var(--border-radius-md);"><i class="ti ${isLive()?'ti-send':'ti-player-play'}" style="font-size:14px;vertical-align:-2px;"></i> ${isLive()?'この枠を機体に予約送信（'+sl.s+'〜自動実行）':'この香りを今すぐ再生'}</button>
         <button onclick="deleteSlot()" class="btn" style="font-size:13px;padding:8px 14px;cursor:pointer;border:1px solid var(--color-border-danger);color:var(--color-text-danger);border-radius:var(--border-radius-md);background:var(--color-background-primary);"><i class="ti ti-trash" style="font-size:14px;vertical-align:-2px;"></i> 削除</button>
       </div>
     </div>`;
@@ -398,11 +407,11 @@ function renderRoom(){
   <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:12px;">
     <div>
       <div style="font-size:21px;font-weight:700;letter-spacing:-0.2px;">${r.name}</div>
-      <div style="font-size:12px;color:var(--color-text-secondary);margin-top:4px;">ScentGem ID: <span style="font-weight:600;color:var(--color-text-primary);">${TENANTS[ti].stores[si].id.toUpperCase()}-${r.id}</span> ・ <span style="display:inline-flex;align-items:center;gap:4px;color:var(--color-text-success);font-weight:600;background:var(--color-background-success);padding:2px 9px;border-radius:999px;"><i class="ti ti-wifi" style="font-size:13px;"></i> オンライン</span></div>
+      <div style="font-size:12px;color:var(--color-text-secondary);margin-top:4px;">${isLive()?liveIdLine(r):`ScentGem ID: <span style="font-weight:600;color:var(--color-text-primary);">${TENANTS[ti].stores[si].id.toUpperCase()}-${r.id}</span> ・ <span style="display:inline-flex;align-items:center;gap:4px;color:var(--color-text-success);font-weight:600;background:var(--color-background-success);padding:2px 9px;border-radius:999px;"><i class="ti ti-wifi" style="font-size:13px;"></i> オンライン</span>`}</div>
     </div>
   </div>
 
-  ${cartArea(r)}
+  ${isLive()?`<div id="liveCard">${liveArea(r)}</div>`:cartArea(r)}
   ${statusArea()}
   ${sprayArea(r)}
 
@@ -418,9 +427,9 @@ function renderRoom(){
 function selectSlot(i){selSlot=i;renderPanel();}
 function clearSel(){selSlot=null;renderPanel();}
 function deleteSlot(){const r=curRoom();const sl=r.sched[di][selSlot];r.sched[di].splice(selSlot,1);selSlot=null;banner="配信枠（"+sl.s+"–"+sl.e+"）を削除しました";renderPanel();}
-function playNow(){const sl=curRoom().sched[di][selSlot];const k=sl.prog[0][0];curRoom().scent=k;curRoom().playing=true;banner=sl.s+"–"+sl.e+" の香り（"+LMAP[k].n+"）を現地で再生開始しました";renderList();renderPanel();}
-function playLive(){curRoom().playing=true;banner="「"+LMAP[curRoom().scent].n+"」の再生を現地に配信しました";renderList();renderPanel();}
-function stopLive(){curRoom().playing=false;banner="現地の再生を停止しました";renderList();renderPanel();}
+function playNow(){if(isLive()) return liveSchedule();const sl=curRoom().sched[di][selSlot];const k=sl.prog[0][0];curRoom().scent=k;curRoom().playing=true;banner=sl.s+"–"+sl.e+" の香り（"+LMAP[k].n+"）を現地で再生開始しました";renderList();renderPanel();}
+function playLive(){if(isLive()) return liveBurst();curRoom().playing=true;banner="「"+LMAP[curRoom().scent].n+"」の再生を現地に配信しました";renderList();renderPanel();}
+function stopLive(){if(isLive()) return liveStop();curRoom().playing=false;banner="現地の再生を停止しました";renderList();renderPanel();}
 
 function openPicker(target){mode="picker";pickerTarget=target;pick=null;pickerQuery="";renderPanel();}
 function openAdd(){mode="add";renderPanel();}
@@ -504,8 +513,129 @@ function saveAdd(){
   banner="配信枠（"+s+"–"+e+"）を登録しました";mode="room";renderPanel();
 }
 
+
+// ===== LIVE 層: device-hub（Horizon 機体クラウド）に cookie 付きで接続 =====
+const HUB = location.hostname.endsWith('github.io') ? 'https://device-hub-production.up.railway.app' : '';
+const LIVE = { devices:[], session:null, now:null, err:null, timer:null, busy:false };
+const RECIPE = (()=>{ try{ return JSON.parse(localStorage.getItem('live_recipe')||'null'); }catch{} return null; })() || { [CALM]:{ch:"1",pct:60}, [AWAKE]:{ch:"2",pct:60} };
+function isLive(){ return !!TENANTS[ti].live; }
+async function hub(path,opt){
+  const r = await fetch(HUB+path,{credentials:'include',headers:{'content-type':'application/json'},...opt});
+  if(r.status===401){ LIVE.err='unauth'; throw new Error('device-hub 未ログイン'); }
+  if(!r.ok){ const j=await r.json().catch(()=>({})); throw new Error(j.error||r.statusText); }
+  LIVE.err=null; return r.json();
+}
+function shortSerial(s){ return String(s||'').replace(/^ScentGem_20500D/,''); }
+function roomDevices(r){ return (r.serials||[]).map(sn=>LIVE.devices.find(d=>d.reported_serial===sn)||{reported_serial:sn,missing:true}); }
+function roomUids(r){ return roomDevices(r).filter(d=>d.device_uid).map(d=>d.device_uid); }
+function channelsFor(scentKey){
+  const rc=RECIPE[scentKey]||{ch:"1",pct:60}; const arr=Array(12).fill(0);
+  String(rc.ch).split(/[,\s、]+/).map(x=>parseInt(x,10)).filter(n=>n>=1&&n<=12).forEach(n=>arr[n-1]=Math.max(1,Math.min(100,+rc.pct||60)));
+  return arr;
+}
+function setRecipe(k,field,v){ RECIPE[k]=RECIPE[k]||{ch:"1",pct:60}; RECIPE[k][field]=v; try{localStorage.setItem('live_recipe',JSON.stringify(RECIPE));}catch{} }
+function toggleSerial(sn,on){ const r=curRoom(); r.serials=r.serials||[]; if(on){ if(!r.serials.includes(sn)) r.serials.push(sn);} else r.serials=r.serials.filter(x=>x!==sn); paintLive(); }
+function liveIdLine(r){
+  const ds=roomDevices(r);
+  return ds.map(d=>{ const on=!!d.online, miss=!!d.missing;
+    return `<span style="display:inline-flex;align-items:center;gap:5px;margin-right:8px;"><span style="font-weight:600;color:var(--color-text-primary);">${shortSerial(d.reported_serial)}</span><span style="display:inline-flex;align-items:center;gap:4px;font-weight:600;padding:1px 8px;border-radius:999px;${on?'color:var(--color-text-success);background:var(--color-background-success);':'color:var(--color-text-tertiary);background:var(--color-background-tertiary);'}"><i class="ti ti-wifi" style="font-size:12px;"></i> ${miss?'未登録':on?'オンライン':'オフライン'}</span>${d.fw?`<span style="font-size:11px;color:var(--color-text-tertiary);">${d.fw}</span>`:''}</span>`; }).join('');
+}
+function fmtT(ms){ if(!ms) return '—'; const t=new Date(ms); return String(t.getHours()).padStart(2,'0')+':'+String(t.getMinutes()).padStart(2,'0')+':'+String(t.getSeconds()).padStart(2,'0'); }
+function liveArea(r){
+  const ds=roomDevices(r), on=sprayCfg(r.area||40).on;
+  if(LIVE.err==='unauth') return `<div class="card" style="border-radius:var(--border-radius-lg);padding:14px 16px;margin-bottom:14px;border:1px solid var(--color-border-danger);">
+    <div style="font-size:13px;font-weight:600;color:var(--color-text-danger);margin-bottom:6px;"><i class="ti ti-lock" style="vertical-align:-2px;"></i> 機体クラウド（device-hub）に未ログイン</div>
+    <div style="font-size:12px;color:var(--color-text-secondary);line-height:1.6;">同じブラウザで <a href="${HUB||location.origin}/" target="_blank" style="color:var(--accent);font-weight:600;">device-hub コンソール</a> にログインしてから、このページを再読み込みしてください（Chrome 推奨）。</div></div>`;
+  const cart = ds.map(d=>{ const chs=(d.inspection&&d.inspection.channels)||null; return ''; }).join('');
+  const devRows = ds.map(d=>{
+    const st=LIVE.status&&LIVE.status[d.device_uid]; const chs=st&&st.channels;
+    const bars = chs ? `<div style="display:flex;gap:3px;margin-top:6px;">${chs.slice(0,12).map((c,i)=>{const v=Math.max(0,Math.min(100,Math.round((c.remaining_ml||0)/50*100)));return `<div title="ch${i+1} ${c.remaining_ml}ml" style="flex:1;height:26px;background:var(--color-background-tertiary);border-radius:4px;display:flex;align-items:flex-end;overflow:hidden;"><div style="width:100%;height:${v}%;background:${v<20?'#e1504c':CART_COLORS[i]};"></div></div>`;}).join('')}</div>` : `<div style="font-size:11px;color:var(--color-text-tertiary);margin-top:4px;">残量: ${d.online?'取得中…':'（オフライン）'}</div>`;
+    return `<div style="padding:8px 10px;border:1px solid var(--color-border-tertiary);border-radius:10px;min-width:0;flex:1 1 240px;">
+      <div style="display:flex;align-items:center;gap:8px;font-size:12px;"><span style="font-weight:600;">${shortSerial(d.reported_serial)}</span>
+        <span style="width:8px;height:8px;border-radius:50%;background:${d.online?'#2e9e5b':'#bbb'};"></span><span style="color:var(--color-text-tertiary);">${d.missing?'未登録':d.online?'オンライン':'オフライン'}${d.fw?' ・ '+d.fw:''}</span></div>${bars}</div>`;
+  }).join('');
+  const all = LIVE.devices.map(d=>{ const sel=(r.serials||[]).includes(d.reported_serial);
+    return `<label style="display:inline-flex;align-items:center;gap:5px;font-size:12px;padding:3px 9px;border:1px solid ${sel?'var(--accent)':'var(--color-border-tertiary)'};border-radius:999px;cursor:pointer;background:${sel?'var(--accent-soft)':'transparent'};"><input type="checkbox" ${sel?'checked':''} onchange="toggleSerial('${d.reported_serial}',this.checked)" style="margin:0;">${shortSerial(d.reported_serial)}<span style="width:7px;height:7px;border-radius:50%;background:${d.online?'#2e9e5b':'#bbb'};"></span></label>`; }).join(' ');
+  const recipeRow = [CALM,AWAKE].map(k=>{ const j=LMAP[k], rc=RECIPE[k]||{ch:"1",pct:60};
+    return `<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:12px;"><img src="${j.img}" style="width:22px;height:22px;border-radius:50%;object-fit:cover;"><span style="font-weight:600;min-width:150px;">${j.n} <span style="font-weight:400;color:var(--color-text-tertiary);">${k===CALM?'鎮静':'覚醒'}</span></span>
+      <span style="color:var(--color-text-secondary);">ch</span><input value="${rc.ch}" oninput="setRecipe('${k}','ch',this.value)" style="width:70px;height:30px;" placeholder="例 1,3">
+      <span style="color:var(--color-text-secondary);">強度</span><input type="number" min="1" max="100" value="${rc.pct}" oninput="setRecipe('${k}','pct',this.value)" style="width:64px;height:30px;text-align:right;"><span style="color:var(--color-text-secondary);">%</span></div>`; }).join('');
+  const ss=LIVE.session; let sessHtml='';
+  if(ss){ const cur=ss.current_step!=null?ss.steps[ss.current_step]:null, nxt=ss.next_step!=null?ss.steps[ss.next_step]:null;
+    const state={scheduled:'予約済み（開始待ち）',running:'実行中',done:'完了',stopped:'停止済み'}[ss.state]||ss.state;
+    const rows=ss.steps.map(st=>`<div style="display:flex;gap:8px;align-items:center;font-size:12px;padding:3px 0;${ss.current_step===st.index?'font-weight:600;':''}"><span style="min-width:96px;">${st.start}–${st.end}</span><span style="flex:1;">${st.name}</span><span style="color:var(--color-text-tertiary);">${st.burstSec}秒 / ${st.gapMin}分ごと ・ ${st.fired}/${st.planned}回</span></div>`).join('');
+    const lastLog=(ss.log||[]).slice(-3).reverse().map(l=>`<div style="font-size:11px;color:var(--color-text-tertiary);">${fmtT(l.t)} ${l.kind==='burst'?'噴霧 '+l.name:l.kind==='done'?'終了→停止':l.kind==='stop'?'手動停止':l.kind} ${ (l.results||[]).map(x=>x.ok?'✓':'✗'+(x.error||'')).join(' ') }</div>`).join('');
+    const active = ss.state==='scheduled'||ss.state==='running';
+    sessHtml=`<div style="margin-top:12px;padding:10px 12px;border-radius:12px;background:${active?'var(--color-background-success)':'var(--color-background-tertiary)'};">
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:4px;"><span style="font-size:12px;font-weight:600;"><i class="ti ti-calendar-time" style="vertical-align:-2px;"></i> 予約セッション ${ss.date}</span><span style="font-size:11px;font-weight:600;padding:1px 8px;border-radius:999px;background:var(--color-background-primary);">${state}</span>
+        ${active?`<span style="font-size:12px;">次の噴霧 <b>${ss.next_burst_local||'—'}</b>${cur?'（'+cur.name+'）':nxt?'（'+nxt.name+' 開始）':''}</span><span style="flex:1;"></span><button onclick="liveCancel()" class="btn" style="font-size:12px;padding:5px 11px;cursor:pointer;border:1px solid var(--color-border-danger);color:var(--color-text-danger);border-radius:var(--border-radius-md);background:var(--color-background-primary);">予約を取り消して停止</button>`:''}</div>
+      ${rows}${lastLog}</div>`;
+  }
+  return `<div class="card" style="border-radius:var(--border-radius-lg);padding:13px 16px;margin-bottom:14px;border:1px solid rgba(164,118,58,0.35);">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-wrap:wrap;gap:6px;">
+      <span style="font-size:12px;font-weight:600;letter-spacing:0.3px;"><i class="ti ti-cloud-data-connection" style="font-size:14px;vertical-align:-2px;color:var(--accent);"></i> 実機接続（Wi-Fi クラウド経由・カートリッジ残量 12本）</span>
+      <span style="font-size:11px;color:var(--color-text-tertiary);">サーバー時刻 ${LIVE.now?LIVE.now:'—'} ・ ${LIVE.err?'<span style="color:var(--color-text-danger)">'+LIVE.err+'</span>':'接続OK'}</span>
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;">${devRows||'<span style="font-size:12px;color:var(--color-text-tertiary);">機体が割り当てられていません</span>'}</div>
+    <div style="margin-top:10px;font-size:11px;color:var(--color-text-tertiary);">この部屋の機体: ${all||'（クラウドに機体なし）'}</div>
+    <div style="margin-top:10px;display:flex;flex-direction:column;gap:6px;">${recipeRow}</div>
+    <div style="font-size:11px;color:var(--color-text-tertiary);margin-top:6px;">1回の噴霧は下の「噴霧サイクル設定」（広さ→${fmtDur(on)}・間隔 ${r.gapMin||5}分）を使います。ch は機体のカートリッジ番号（1〜12）。</div>
+    ${sessHtml}</div>`;
+}
+function paintLive(){ const el=$("liveCard"); if(el && isLive() && mode==="room") el.innerHTML=liveArea(curRoom()); }
+async function livePoll(force){
+  if(!isLive() || LIVE.busy) return; LIVE.busy=true;
+  try{
+    const t=Date.now();
+    if(force || t-(LIVE.lastDev||0)>15000){ const j=await hub('/api/devices'); LIVE.devices=j.devices||[]; LIVE.lastDev=t;
+      // 残量: オンライン機に get_status（30秒ごと）
+      if(force || t-(LIVE.lastSt||0)>30000){ const uids=roomUids(curRoom()).filter(u=>LIVE.devices.find(d=>d.device_uid===u&&d.online));
+        if(uids.length){ const s=await hub('/api/command',{method:'POST',body:JSON.stringify({uids,cmd:'get_status'})}); LIVE.status=LIVE.status||{}; (s.results||[]).forEach(x=>{ if(x.ok) LIVE.status[x.uid]=x.response; }); } LIVE.lastSt=t; }
+    }
+    const sj=await hub('/api/session'); LIVE.session=sj.session; LIVE.now=sj.now_local;
+    const r=curRoom(); if(LIVE.session){ const a=LIVE.session.state==='running'||LIVE.session.state==='scheduled'; r.playing=LIVE.session.state==='running'; }
+  }catch(e){ LIVE.err=LIVE.err||e.message; }
+  finally{ LIVE.busy=false; paintLive(); if($("roomlist")) renderList(); }
+}
+function liveStart(){ if(LIVE.timer) clearInterval(LIVE.timer); LIVE.timer=setInterval(()=>livePoll(false),5000); livePoll(true); }
+async function liveBurst(){
+  const r=curRoom(), uids=roomUids(r); if(!uids.length){ banner="機体が割り当てられていません"; return renderPanel(); }
+  const on=sprayCfg(r.area||40).on;
+  try{ const j=await hub('/api/session/burst',{method:'POST',body:JSON.stringify({uids,channels:channelsFor(r.scent),burstSec:on,fanSpeed:50})});
+    const ok=j.results.filter(x=>x.ok).length; r.playing=ok>0; banner=`「${LMAP[r.scent].n}」を ${on}秒 噴霧: ${ok}/${j.results.length}台 OK`+(ok<j.results.length?'（'+j.results.filter(x=>!x.ok).map(x=>x.error).join(', ')+'）':'');
+  }catch(e){ banner="送信失敗: "+e.message; }
+  renderList(); renderPanel();
+}
+async function liveStop(){
+  const r=curRoom(), uids=roomUids(r);
+  try{ if(LIVE.session&&(LIVE.session.state==='running'||LIVE.session.state==='scheduled')) await hub('/api/session/stop',{method:'POST',body:'{}'});
+    if(uids.length) await hub('/api/session/stop-devices',{method:'POST',body:JSON.stringify({uids})});
+    r.playing=false; banner="現地の機体を停止しました（予約があれば取り消し）"; }
+  catch(e){ banner="停止失敗: "+e.message; }
+  await livePoll(true); renderList(); renderPanel();
+}
+async function liveCancel(){ try{ await hub('/api/session/stop',{method:'POST',body:'{}'}); banner="予約セッションを取り消し、機体を停止しました"; }catch(e){ banner="取り消し失敗: "+e.message; } await livePoll(true); renderPanel(); }
+async function liveSchedule(){
+  const r=curRoom(), sl=r.sched[di][selSlot], uids=roomUids(r);
+  if(!uids.length){ banner="機体が割り当てられていません"; return renderPanel(); }
+  const on=sprayCfg(r.area||40).on, gap=r.gapMin||5;
+  let cur=t2m(sl.s); const steps=[];
+  for(const [k,min] of sl.prog){ const s=cur, e=Math.min(cur+min,t2m(sl.e)); steps.push({name:LMAP[k].n+(k===CALM?'（鎮静）':k===AWAKE?'（覚醒）':''), sid:k.slice(-5), start:mm(s), end:mm(e), channels:channelsFor(k), burstSec:on, gapMin:gap, fanSpeed:50}); cur=e; }
+  const today=new Date(), date=today.getFullYear()+'-'+String(today.getMonth()+1).padStart(2,'0')+'-'+String(today.getDate()).padStart(2,'0');
+  if(di!==todayIdx()){ banner="予約送信は「今日」の曜日タブの枠だけ対応（今日="+DAYS[todayIdx()]+"）"; return renderPanel(); }
+  if(!confirm(`${TENANTS[ti].stores[si].name} / ${r.name}\n${steps.map(s=>s.start+'–'+s.end+' '+s.name+'（'+on+'秒 / '+gap+'分ごと）').join('\n')}\n\n機体 ${uids.length}台に予約送信します。よろしいですか？`)) return;
+  try{ await hub('/api/session',{method:'POST',body:JSON.stringify({uids,steps,date,label:TENANTS[ti].name+' '+TENANTS[ti].stores[si].name})});
+    banner=`${sl.s}–${sl.e} の配信をクラウドに予約しました。開始時刻に自動で噴霧が始まります`; }
+  catch(e){ banner="予約失敗: "+e.message; }
+  selSlot=null; await livePoll(true); renderPanel();
+}
+function mm(m){ return String(Math.floor(m/60)).padStart(2,'0')+':'+String(m%60).padStart(2,'0'); }
+const _onTenant=onTenant; onTenant=function(){ _onTenant(); if(isLive()){ di=todayIdx(); renderPanel(); liveStart(); } else if(LIVE.timer){clearInterval(LIVE.timer);LIVE.timer=null;} };
+const _selRoom=selRoom; selRoom=function(i){ _selRoom(i); if(isLive()){ di=todayIdx(); renderPanel(); livePoll(true); } };
+
 if(location.hash.indexOf("picker")>=0){mode="picker";}
-fillSel();renderList();renderPanel();
+fillSel();renderList();if(isLive()){di=todayIdx();}renderPanel();
+if(isLive()) liveStart();
 </script>
 </body>
 </html>
