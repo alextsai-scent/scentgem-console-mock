@@ -364,7 +364,7 @@ function statusArea(){
       <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px;">${progChips(sl.prog)}</div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;">
         <button onclick="openPicker('slot')" class="btn" style="font-size:13px;padding:8px 14px;cursor:pointer;border:1px solid var(--color-border-info);color:var(--color-text-info);border-radius:var(--border-radius-md);background:var(--color-background-primary);font-weight:500;"><i class="ti ti-replace" style="font-size:14px;vertical-align:-2px;"></i> この枠の香りを差し替え</button>
-        <button onclick="playNow()" class="btn btn-primary" style="font-size:13px;padding:8px 14px;cursor:pointer;font-weight:600;border-radius:var(--border-radius-md);"><i class="ti ${isLive()?'ti-send':'ti-player-play'}" style="font-size:14px;vertical-align:-2px;"></i> ${isLive()?'この枠を機体に予約送信（'+sl.s+'〜自動実行）':'この香りを今すぐ再生'}</button>
+        <button onclick="playNow()" class="btn btn-primary" style="font-size:13px;padding:8px 14px;cursor:pointer;font-weight:600;border-radius:var(--border-radius-md);"><i class="ti ${isLive()?'ti-send':'ti-player-play'}" style="font-size:14px;vertical-align:-2px;"></i> ${isLive()?(sl.fromServer?'この枠を再送信（予約を置き換え）':'この枠を機体に予約送信（'+sl.s+'〜自動実行）'):'この香りを今すぐ再生'}</button>
         <button onclick="deleteSlot()" class="btn" style="font-size:13px;padding:8px 14px;cursor:pointer;border:1px solid var(--color-border-danger);color:var(--color-text-danger);border-radius:var(--border-radius-md);background:var(--color-background-primary);"><i class="ti ti-trash" style="font-size:14px;vertical-align:-2px;"></i> 削除</button>
       </div>
     </div>`;
@@ -606,6 +606,23 @@ function liveArea(r){
     <div style="margin-top:10px;font-size:11px;color:var(--color-text-tertiary);">この部屋の機体: ${all||'（クラウドに機体なし）'}</div>
     ${sessHtml}</div>`;
 }
+
+// サーバーの予約セッション → 今日のスケジュール表の枠に反映（fromServer 印。再読み込みしても消えない）
+function scentIdOfStep(st){ const byUsf=Object.values(SCENTS).find(x=>x.usfId===st.sid); if(byUsf) return byUsf.id; const byName=KEYS.find(k=>LMAP[k].live&&LMAP[k].n===st.name); return byName||CALM; }
+function syncSessionSlot(){
+  if(!isLive()) return; const r=curRoom(); const d=todayIdx(); r.sched[d]=(r.sched[d]||[]).filter(sl=>!sl.fromServer);
+  const ss=LIVE.session; if(!ss||!ss.steps||!ss.steps.length) return;
+  const today=new Date(); const ds=today.getFullYear()+'-'+String(today.getMonth()+1).padStart(2,'0')+'-'+String(today.getDate()).padStart(2,'0');
+  if(ss.date!==ds || ss.state==='stopped') return;
+  const steps=[...ss.steps].sort((a,b)=>t2m(a.start)-t2m(b.start));
+  const prog=steps.map(st=>[scentIdOfStep(st), Math.max(1,t2m(st.end)-t2m(st.start))]);
+  const label={scheduled:'予約済み',running:'実行中',paused:'一時停止中',done:'完了'}[ss.state]||'';
+  const sl=L(steps[0].start, steps[steps.length-1].end, prog, label); sl.fromServer=true;
+  // 同じ時間帯を手元で持っていたら（予約送信元の枠）サーバー版に置き換える
+  r.sched[d]=r.sched[d].filter(x=>!(x.s===sl.s&&x.e===sl.e));
+  r.sched[d].push(sl); r.sched[d].sort((a,b)=>t2m(a.s)-t2m(b.s));
+  if(mode==="room" && $("panel") && !$("liveCard")) return; 
+}
 function paintLive(){ if(!isLive()||mode!=="room") return; const el=$("liveCard"); if(el) el.innerHTML=liveArea(curRoom()); const h=$("idLine"); if(h) h.innerHTML=liveIdLine(curRoom()); }
 async function livePoll(force){
   if(!isLive() || LIVE.busy) return; LIVE.busy=true;
@@ -617,10 +634,10 @@ async function livePoll(force){
       if(force || t-(LIVE.lastSt||0)>30000){ const uids=roomUids(curRoom()).filter(u=>LIVE.devices.find(d=>d.device_uid===u&&d.online));
         if(uids.length){ const s=await hub('/api/command',{method:'POST',body:JSON.stringify({uids,cmd:'get_status'})}); LIVE.status=LIVE.status||{}; (s.results||[]).forEach(x=>{ if(x.ok) LIVE.status[x.uid]=x.response; }); } LIVE.lastSt=t; }
     }
-    const sj=await hub('/api/session'); LIVE.session=sj.session; LIVE.now=sj.now_local;
+    const sj=await hub('/api/session'); LIVE.session=sj.session; LIVE.now=sj.now_local; syncSessionSlot();
     const r=curRoom(); if(LIVE.session){ r.playing=LIVE.session.state==='running'; }
   }catch(e){ LIVE.err=LIVE.err||e.message; }
-  finally{ LIVE.busy=false; paintLive(); if($("roomlist")) renderList(); }
+  finally{ LIVE.busy=false; const sig=JSON.stringify((curRoom().sched[todayIdx()]||[]).map(x=>[x.s,x.e,x.memo])); if(sig!==LIVE.lastSig){ LIVE.lastSig=sig; if(mode==="room") renderPanel(); } else paintLive(); if($("roomlist")) renderList(); }
 }
 function liveStart(){ if(LIVE.timer) clearInterval(LIVE.timer); LIVE.timer=setInterval(()=>livePoll(false),5000); livePoll(true); }
 async function liveBurst(){
