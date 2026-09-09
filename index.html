@@ -176,7 +176,10 @@ function rm(id,name,scent,playing,sched){return {id,name,scent,playing,sched,are
 function L(s,e,prog,memo){return {s,e,prog,memo:memo||""};}
 
 // ===== LIVE: zen place 中目黒（device-hub 実機連携）=====
-const CALM=P("00025"), AWAKE=P("00011");           // 鎮静=Stillness / 覚醒=Morning Light（表示用ジャケット）
+const CALM="scent_USF-JP-SD-2026-00199", AWAKE="scent_USF-JP-SD-2026-00200";   // Scentdays 配信中のスマートフレグランス（鎮静=ゆず×ヒノキ／覚醒=ローズ×ミント）
+// 起動時の仮エントリ（カタログ取得後に本物の画像・レシピで上書き）
+LMAP[CALM]={id:CALM,s:"Moments",n:"鎮静",d:"ゆずとヒノキの香り",c:"#7F906C",t:"#FFFFFF",img:"https://scentdays-production.up.railway.app/static/scents/USF-JP-SD-2026-00199.png"};
+LMAP[AWAKE]={id:AWAKE,s:"Moments",n:"覚醒",d:"ローズとミントの香り",c:"#D98E73",t:"#FFFFFF",img:"https://scentdays-production.up.railway.app/static/scents/USF-JP-SD-2026-00200.png"};
 const LIVE_SERIALS=["ScentGem_20500D1B399A","ScentGem_20500D1B4926"];
 const TENANTS=[
  {id:"zen", name:"zen place", live:true, stores:[
@@ -269,7 +272,25 @@ function sprayViz(on,g){
   const seg=`<span style="flex:${on};min-width:6px;height:100%;display:block;background:var(--accent-grad);"></span><span style="flex:${g*60};min-width:14px;height:100%;display:block;"></span>`;
   return seg.repeat(3);
 }
+function liveBurstSec(k){ const u=usfSummary(k); return u?u.burstSec:10; }
 function sprayArea(r){
+  if(isLive()){
+    const g=r.gapMin||5,on=liveBurstSec(r.scent),cyc=on+g*60,perH=Math.max(1,Math.round(3600/cyc));
+    const gopts=[1,2,3,5,10,15,30].map(v=>`<option value="${v}" ${v===g?'selected':''}>${v}分ごと</option>`).join("");
+    return `<div class="card" style="border-radius:var(--border-radius-lg);padding:14px 16px;margin-bottom:14px;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+      <span style="font-size:13px;font-weight:600;letter-spacing:0.2px;"><i class="ti ti-air-conditioning" style="font-size:14px;color:var(--accent);vertical-align:-2px;"></i> 噴霧サイクル設定</span>
+      <span style="font-size:11px;font-weight:600;color:var(--accent);background:var(--accent-soft);border:1px solid rgba(164,118,58,0.3);padding:2px 9px;border-radius:999px;">レシピから自動</span>
+    </div>
+    <div style="display:flex;gap:9px;flex-wrap:wrap;align-items:center;">
+      <span style="font-size:12px;color:var(--color-text-secondary);">1回の噴霧 <b style="color:var(--color-text-primary);">${fmtDur(on)}</b>（${LMAP[r.scent]?LMAP[r.scent].n:''} のレシピ）</span>
+      <label style="font-size:12px;color:var(--color-text-secondary);margin-left:8px;">噴霧の間隔</label>
+      <select id="gapIn" onchange="onGap(this.value)" style="height:34px;width:auto;">${gopts}</select>
+      <span id="cycSum" style="font-size:12px;color:var(--color-text-secondary);">→ 約${perH}回/時</span>
+    </div>
+    <div id="cycViz" style="margin-top:12px;display:flex;align-items:center;height:10px;border-radius:999px;overflow:hidden;background:var(--color-background-tertiary);">${sprayViz(on,g)}</div>
+  </div>`;
+  }
   const a=r.area||40,g=r.gapMin||15,on=sprayCfg(a).on,cyc=on+g*60,perH=Math.max(1,Math.round(3600/cyc));
   const gopts=[5,10,15,30,60].map(v=>`<option value="${v}" ${v===g?'selected':''}>${v}分ごと</option>`).join("");
   return `<div class="card" style="border-radius:var(--border-radius-lg);padding:14px 16px;margin-bottom:14px;">
@@ -303,7 +324,7 @@ function sprayArea(r){
   </div>`;
 }
 function onArea(v){ const n=parseInt(v,10); if(isNaN(n)) return; curRoom().area=Math.max(1,Math.min(500,n)); paintSpray(); }
-function onGap(v){ curRoom().gapMin=+v; paintSpray(); }
+function onGap(v){ curRoom().gapMin=+v; if(isLive()) return renderPanel(); paintSpray(); }
 function paintSpray(){
   const r=curRoom(),a=r.area||40,g=r.gapMin||15,on=sprayCfg(a).on,cyc=on+g*60,perH=Math.max(1,Math.round(3600/cyc));
   if(!$("onBig")) return;
@@ -439,7 +460,7 @@ function jacketGrid(){
   const r=curRoom(),slotMode=pickerTarget==="slot",sl=slotMode?r.sched[di][selSlot]:null;
   const cur=slotMode?sl.prog[0][0]:r.scent;
   const q=pickerQuery.trim();
-  const keys=KEYS.filter(k=>{const p=LMAP[k];return !q||(p.n+p.d+p.s).toLowerCase().indexOf(q.toLowerCase())>=0;});
+  const keys=KEYS.filter(k=>{const p=LMAP[k]; if(isLive()?!p.live:p.live) return false; return !q||(p.n+p.d+p.s).toLowerCase().indexOf(q.toLowerCase())>=0;});
   if(!keys.length) return `<div style="grid-column:1/-1;text-align:center;color:var(--color-text-tertiary);font-size:13px;padding:24px;">「${q}」に該当する商品がありません</div>`;
   return keys.map(k=>{const p=LMAP[k],sel=pick===k,isCur=cur===k;
     return `<button onclick="pickOne('${k}')" class="jacket" style="position:relative;aspect-ratio:1;border:none;padding:0;cursor:pointer;border-radius:var(--border-radius-lg);overflow:hidden;background:var(--color-background-tertiary);outline:${sel?'3px solid var(--accent)':'none'};outline-offset:2px;">
@@ -459,7 +480,7 @@ function renderPicker(){
   <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">
     <button onclick="cancelTo()" style="font-size:13px;padding:5px 10px;cursor:pointer;border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-md);background:var(--color-background-primary);"><i class="ti ti-arrow-left" style="vertical-align:-2px;"></i></button>
     <div style="flex:1;min-width:0;"><div style="font-size:16px;font-weight:500;">${slotMode?'配信枠の香りを差し替え':'香りデータを差し替え'}</div>
-    <div style="font-size:12px;color:var(--color-text-secondary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${r.name}${slotMode?' ・ '+sl.s+'–'+sl.e:' ・ Scentdays 商品ライブラリ（'+KEYS.length+'種）'}</div></div>
+    <div style="font-size:12px;color:var(--color-text-secondary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${r.name}${slotMode?' ・ '+sl.s+'–'+sl.e:' ・ Scentdays 商品ライブラリ（'+KEYS.filter(k=>isLive()?LMAP[k].live:!LMAP[k].live).length+'種）'}</div></div>
   </div>
   <div style="position:relative;margin-bottom:12px;">
     <i class="ti ti-search" style="position:absolute;left:11px;top:50%;transform:translateY(-50%);font-size:15px;color:var(--color-text-tertiary);" aria-hidden="true"></i>
@@ -481,7 +502,7 @@ function savePick(){if(!pick)return;
 
 function renderAdd(){
   const r=curRoom();
-  const opts=KEYS.map(k=>`<option value="${k}">${LMAP[k].n}（${LMAP[k].s}）</option>`).join("");
+  const opts=KEYS.filter(k=>isLive()?LMAP[k].live:!LMAP[k].live).map(k=>`<option value="${k}">${LMAP[k].n}（${LMAP[k].s}）</option>`).join("");
   $("panel").innerHTML=`
   <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;">
     <button onclick="cancelTo()" style="font-size:13px;padding:5px 10px;cursor:pointer;border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-md);background:var(--color-background-primary);"><i class="ti ti-arrow-left" style="vertical-align:-2px;"></i></button>
@@ -517,7 +538,21 @@ function saveAdd(){
 // ===== LIVE 層: device-hub（Horizon 機体クラウド）に cookie 付きで接続 =====
 const HUB = location.hostname.endsWith('github.io') ? 'https://device-hub-production.up.railway.app' : '';
 const LIVE = { devices:[], session:null, now:null, err:null, timer:null, busy:false };
-const RECIPE = (()=>{ try{ return JSON.parse(localStorage.getItem('live_recipe')||'null'); }catch{} return null; })() || { [CALM]:{ch:"1",pct:60}, [AWAKE]:{ch:"2",pct:60} };
+const SCENTS = {};   // Scentdays 公開カタログ（id → {name, imageUrl, usf}）。device-hub 経由で取得
+const FAMILY_COLORS={"category-citrus":"#C9A227","category-woody":"#7F906C","category-floral":"#D98E73","category-fresh":"#6FA8C9","category-green":"#5E9E6E","category-oriental":"#A4763A","category-fruity":"#D97A9B","category-aquatic":"#5FA9B8","category-spicy":"#B85C3A","category-gourmand":"#B0866E","category-musk":"#9A8FB0","category-herbal":"#6E9E7E"};
+function registerScents(list){
+  for(const sc of list){ SCENTS[sc.id]=sc;
+    const fam=(sc.familyTags||[])[0]; const c=FAMILY_COLORS[fam]||"#8C7B6B";
+    LMAP[sc.id]={id:sc.id,s:sc.category||"Scentdays",n:sc.name,d:sc.description||"",c,t:"#FFFFFF",img:sc.imageUrl||"",usf:sc.usf,live:true};
+    if(!KEYS.includes(sc.id)) KEYS.push(sc.id);
+  }
+}
+function usfOf(k){ return (SCENTS[k]&&SCENTS[k].usf)||(LMAP[k]&&LMAP[k].usf)||null; }
+function usfSummary(k){ const u=usfOf(k); if(!u) return null;
+  const act=u.intensity.map((v,i)=>[i+1,v,u.duration[i]||0]).filter(x=>x[1]>0);
+  const durs=act.map(x=>x[2]).filter(v=>v>0);
+  return {channels:u.intensity.slice(0,12), burstSec:durs.length?Math.max(...durs):10, fan:u.fan_speed??50, act};
+}
 function isLive(){ return !!TENANTS[ti].live; }
 async function hub(path,opt){
   const r = await fetch(HUB+path,{credentials:'include',headers:{'content-type':'application/json'},...opt});
@@ -528,12 +563,7 @@ async function hub(path,opt){
 function shortSerial(s){ return String(s||'').replace(/^ScentGem_20500D/,''); }
 function roomDevices(r){ return (r.serials||[]).map(sn=>LIVE.devices.find(d=>d.reported_serial===sn)||{reported_serial:sn,missing:true}); }
 function roomUids(r){ return roomDevices(r).filter(d=>d.device_uid).map(d=>d.device_uid); }
-function channelsFor(scentKey){
-  const rc=RECIPE[scentKey]||{ch:"1",pct:60}; const arr=Array(12).fill(0);
-  String(rc.ch).split(/[,\s、]+/).map(x=>parseInt(x,10)).filter(n=>n>=1&&n<=12).forEach(n=>arr[n-1]=Math.max(1,Math.min(100,+rc.pct||60)));
-  return arr;
-}
-function setRecipe(k,field,v){ RECIPE[k]=RECIPE[k]||{ch:"1",pct:60}; RECIPE[k][field]=v; try{localStorage.setItem('live_recipe',JSON.stringify(RECIPE));}catch{} }
+function channelsFor(scentKey){ const u=usfSummary(scentKey); return u?u.channels:Array(12).fill(0); }
 function toggleSerial(sn,on){ const r=curRoom(); r.serials=r.serials||[]; if(on){ if(!r.serials.includes(sn)) r.serials.push(sn);} else r.serials=r.serials.filter(x=>x!==sn); paintLive(); }
 function liveIdLine(r){
   const ds=roomDevices(r);
@@ -556,10 +586,9 @@ function liveArea(r){
   }).join('');
   const all = LIVE.devices.map(d=>{ const sel=(r.serials||[]).includes(d.reported_serial);
     return `<label style="display:inline-flex;align-items:center;gap:5px;font-size:12px;padding:3px 9px;border:1px solid ${sel?'var(--accent)':'var(--color-border-tertiary)'};border-radius:999px;cursor:pointer;background:${sel?'var(--accent-soft)':'transparent'};"><input type="checkbox" ${sel?'checked':''} onchange="toggleSerial('${d.reported_serial}',this.checked)" style="margin:0;">${shortSerial(d.reported_serial)}<span style="width:7px;height:7px;border-radius:50%;background:${d.online?'#2e9e5b':'#bbb'};"></span></label>`; }).join(' ');
-  const recipeRow = [CALM,AWAKE].map(k=>{ const j=LMAP[k], rc=RECIPE[k]||{ch:"1",pct:60};
-    return `<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:12px;"><img src="${j.img}" style="width:22px;height:22px;border-radius:50%;object-fit:cover;"><span style="font-weight:600;min-width:150px;">${j.n} <span style="font-weight:400;color:var(--color-text-tertiary);">${k===CALM?'鎮静':'覚醒'}</span></span>
-      <span style="color:var(--color-text-secondary);">ch</span><input value="${rc.ch}" oninput="setRecipe('${k}','ch',this.value)" style="width:70px;height:30px;" placeholder="例 1,3">
-      <span style="color:var(--color-text-secondary);">強度</span><input type="number" min="1" max="100" value="${rc.pct}" oninput="setRecipe('${k}','pct',this.value)" style="width:64px;height:30px;text-align:right;"><span style="color:var(--color-text-secondary);">%</span></div>`; }).join('');
+  const recipeRow = [curRoom().scent, ...(((curRoom().sched[di]||[]).flatMap(sl=>sl.prog.map(p=>p[0]))))].filter((k,i,a)=>a.indexOf(k)===i).slice(0,4).map(k=>{ const j=LMAP[k]||{n:k,img:""}, u=usfSummary(k);
+    const chips=u?u.act.map(x=>`<span style="font-size:11px;padding:1px 7px;border-radius:999px;background:var(--color-background-tertiary);">ch${x[0]} <b>${x[1]}%</b></span>`).join(' '):'<span style="font-size:11px;color:var(--color-text-danger);">レシピ未取得</span>';
+    return `<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:12px;"><img src="${j.img}" style="width:22px;height:22px;border-radius:50%;object-fit:cover;background:var(--color-background-tertiary);"><span style="font-weight:600;min-width:64px;">${j.n}</span><span style="color:var(--color-text-tertiary);font-size:11px;">${SCENTS[k]?SCENTS[k].usfId:''}</span> ${chips} ${u?`<span style="font-size:11px;color:var(--color-text-secondary);">${u.burstSec}秒噴霧 ・ ファン${u.fan}%</span>`:''}</div>`; }).join('');
   const ss=LIVE.session; let sessHtml='';
   if(ss){ const cur=ss.current_step!=null?ss.steps[ss.current_step]:null, nxt=ss.next_step!=null?ss.steps[ss.next_step]:null;
     const state={scheduled:'予約済み（開始待ち）',running:'実行中',done:'完了',stopped:'停止済み'}[ss.state]||ss.state;
@@ -578,8 +607,9 @@ function liveArea(r){
     </div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;">${devRows||'<span style="font-size:12px;color:var(--color-text-tertiary);">機体が割り当てられていません</span>'}</div>
     <div style="margin-top:10px;font-size:11px;color:var(--color-text-tertiary);">この部屋の機体: ${all||'（クラウドに機体なし）'}</div>
-    <div style="margin-top:10px;display:flex;flex-direction:column;gap:6px;">${recipeRow}</div>
-    <div style="font-size:11px;color:var(--color-text-tertiary);margin-top:6px;">1回の噴霧は下の「噴霧サイクル設定」（広さ→${fmtDur(on)}・間隔 ${r.gapMin||5}分）を使います。ch は機体のカートリッジ番号（1〜12）。</div>
+    <div style="margin-top:10px;font-size:11px;font-weight:600;color:var(--color-text-secondary);"><i class="ti ti-flask" style="vertical-align:-1px;"></i> Scentdays スマートフレグランスのレシピ（配信データそのまま機体へ）</div>
+    <div style="margin-top:6px;display:flex;flex-direction:column;gap:6px;">${recipeRow}</div>
+    <div style="font-size:11px;color:var(--color-text-tertiary);margin-top:6px;">噴霧秒数・配合・ファンは Scentdays のレシピ値。繰り返しの間隔は下の「噴霧の間隔」（既定5分＝アプリのインターバル再生と同じ）。</div>
     ${sessHtml}</div>`;
 }
 function paintLive(){ if(!isLive()||mode!=="room") return; const el=$("liveCard"); if(el) el.innerHTML=liveArea(curRoom()); const h=$("idLine"); if(h) h.innerHTML=liveIdLine(curRoom()); }
@@ -587,6 +617,7 @@ async function livePoll(force){
   if(!isLive() || LIVE.busy) return; LIVE.busy=true;
   try{
     const t=Date.now();
+    if(!LIVE.lastCat || t-LIVE.lastCat>600000){ try{ const c=await hub('/api/scentdays/scents'); registerScents(c.scents||[]); LIVE.lastCat=t; if(mode==="picker") renderPanel(); }catch(e){ LIVE.catErr=e.message; } }
     if(force || t-(LIVE.lastDev||0)>15000){ const j=await hub('/api/devices'); LIVE.devices=j.devices||[]; LIVE.lastDev=t;
       // 残量: オンライン機に get_status（30秒ごと）
       if(force || t-(LIVE.lastSt||0)>30000){ const uids=roomUids(curRoom()).filter(u=>LIVE.devices.find(d=>d.device_uid===u&&d.online));
@@ -600,8 +631,9 @@ async function livePoll(force){
 function liveStart(){ if(LIVE.timer) clearInterval(LIVE.timer); LIVE.timer=setInterval(()=>livePoll(false),5000); livePoll(true); }
 async function liveBurst(){
   const r=curRoom(), uids=roomUids(r); if(!uids.length){ banner="機体が割り当てられていません"; return renderPanel(); }
-  const on=sprayCfg(r.area||40).on;
-  try{ const j=await hub('/api/session/burst',{method:'POST',body:JSON.stringify({uids,channels:channelsFor(r.scent),burstSec:on,fanSpeed:50})});
+  const u=usfSummary(r.scent); if(!u){ banner="レシピが取得できていません（Scentdays カタログ未取得）"; return renderPanel(); }
+  const on=u.burstSec;
+  try{ const j=await hub('/api/session/burst',{method:'POST',body:JSON.stringify({uids,channels:u.channels,burstSec:on,fanSpeed:u.fan})});
     const ok=j.results.filter(x=>x.ok).length; r.playing=ok>0; banner=`「${LMAP[r.scent].n}」を ${on}秒 噴霧: ${ok}/${j.results.length}台 OK`+(ok<j.results.length?'（'+j.results.filter(x=>!x.ok).map(x=>x.error).join(', ')+'）':'');
   }catch(e){ banner="送信失敗: "+e.message; }
   renderList(); renderPanel();
@@ -618,12 +650,14 @@ async function liveCancel(){ try{ await hub('/api/session/stop',{method:'POST',b
 async function liveSchedule(){
   const r=curRoom(), sl=r.sched[di][selSlot], uids=roomUids(r);
   if(!uids.length){ banner="機体が割り当てられていません"; return renderPanel(); }
-  const on=sprayCfg(r.area||40).on, gap=r.gapMin||5;
+  const gap=r.gapMin||5;
   let cur=t2m(sl.s); const steps=[];
-  for(const [k,min] of sl.prog){ const s=cur, e=Math.min(cur+min,t2m(sl.e)); steps.push({name:LMAP[k].n+(k===CALM?'（鎮静）':k===AWAKE?'（覚醒）':''), sid:k.slice(-5), start:mm(s), end:mm(e), channels:channelsFor(k), burstSec:on, gapMin:gap, fanSpeed:50}); cur=e; }
+  for(const [k,min] of sl.prog){ const u=usfSummary(k); if(!u){ banner="「"+(LMAP[k]?LMAP[k].n:k)+"」のレシピが取得できていません"; return renderPanel(); }
+    const s=cur, e=Math.min(cur+min,t2m(sl.e)); steps.push({name:LMAP[k].n, sid:(SCENTS[k]&&SCENTS[k].usfId)||k.slice(-20), start:mm(s), end:mm(e), channels:u.channels, burstSec:u.burstSec, gapMin:gap, fanSpeed:u.fan}); cur=e; }
+  const on=steps.map(s=>s.burstSec+'秒').join('/');
   const today=new Date(), date=today.getFullYear()+'-'+String(today.getMonth()+1).padStart(2,'0')+'-'+String(today.getDate()).padStart(2,'0');
   if(di!==todayIdx()){ banner="予約送信は「今日」の曜日タブの枠だけ対応（今日="+DAYS[todayIdx()]+"）"; return renderPanel(); }
-  if(!confirm(`${TENANTS[ti].stores[si].name} / ${r.name}\n${steps.map(s=>s.start+'–'+s.end+' '+s.name+'（'+on+'秒 / '+gap+'分ごと）').join('\n')}\n\n機体 ${uids.length}台に予約送信します。よろしいですか？`)) return;
+  if(!confirm(`${TENANTS[ti].stores[si].name} / ${r.name}\n${steps.map(s=>s.start+'–'+s.end+' '+s.name+'（'+s.burstSec+'秒 / '+gap+'分ごと）').join('\n')}\n\n機体 ${uids.length}台に予約送信します。よろしいですか？`)) return;
   try{ await hub('/api/session',{method:'POST',body:JSON.stringify({uids,steps,date,label:TENANTS[ti].name+' '+TENANTS[ti].stores[si].name})});
     banner=`${sl.s}–${sl.e} の配信をクラウドに予約しました。開始時刻に自動で噴霧が始まります`; }
   catch(e){ banner="予約失敗: "+e.message; }
