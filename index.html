@@ -407,7 +407,7 @@ function renderRoom(){
   <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:12px;">
     <div>
       <div style="font-size:21px;font-weight:700;letter-spacing:-0.2px;">${r.name}</div>
-      <div style="font-size:12px;color:var(--color-text-secondary);margin-top:4px;">${isLive()?liveIdLine(r):`ScentGem ID: <span style="font-weight:600;color:var(--color-text-primary);">${TENANTS[ti].stores[si].id.toUpperCase()}-${r.id}</span> ・ <span style="display:inline-flex;align-items:center;gap:4px;color:var(--color-text-success);font-weight:600;background:var(--color-background-success);padding:2px 9px;border-radius:999px;"><i class="ti ti-wifi" style="font-size:13px;"></i> オンライン</span>`}</div>
+      <div id="idLine" style="font-size:12px;color:var(--color-text-secondary);margin-top:4px;">${isLive()?liveIdLine(r):`ScentGem ID: <span style="font-weight:600;color:var(--color-text-primary);">${TENANTS[ti].stores[si].id.toUpperCase()}-${r.id}</span> ・ <span style="display:inline-flex;align-items:center;gap:4px;color:var(--color-text-success);font-weight:600;background:var(--color-background-success);padding:2px 9px;border-radius:999px;"><i class="ti ti-wifi" style="font-size:13px;"></i> オンライン</span>`}</div>
     </div>
   </div>
 
@@ -582,7 +582,7 @@ function liveArea(r){
     <div style="font-size:11px;color:var(--color-text-tertiary);margin-top:6px;">1回の噴霧は下の「噴霧サイクル設定」（広さ→${fmtDur(on)}・間隔 ${r.gapMin||5}分）を使います。ch は機体のカートリッジ番号（1〜12）。</div>
     ${sessHtml}</div>`;
 }
-function paintLive(){ const el=$("liveCard"); if(el && isLive() && mode==="room") el.innerHTML=liveArea(curRoom()); }
+function paintLive(){ if(!isLive()||mode!=="room") return; const el=$("liveCard"); if(el) el.innerHTML=liveArea(curRoom()); const h=$("idLine"); if(h) h.innerHTML=liveIdLine(curRoom()); }
 async function livePoll(force){
   if(!isLive() || LIVE.busy) return; LIVE.busy=true;
   try{
