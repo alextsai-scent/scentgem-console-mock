@@ -588,13 +588,13 @@ function liveArea(r){
     return `<label style="display:inline-flex;align-items:center;gap:5px;font-size:12px;padding:3px 9px;border:1px solid ${sel?'var(--accent)':'var(--color-border-tertiary)'};border-radius:999px;cursor:pointer;background:${sel?'var(--accent-soft)':'transparent'};"><input type="checkbox" ${sel?'checked':''} onchange="toggleSerial('${d.reported_serial}',this.checked)" style="margin:0;">${shortSerial(d.reported_serial)}<span style="width:7px;height:7px;border-radius:50%;background:${d.online?'#2e9e5b':'#bbb'};"></span></label>`; }).join(' ');
   const ss=LIVE.session; let sessHtml='';
   if(ss){ const cur=ss.current_step!=null?ss.steps[ss.current_step]:null, nxt=ss.next_step!=null?ss.steps[ss.next_step]:null;
-    const state={scheduled:'予約済み（開始待ち）',running:'実行中',done:'完了',stopped:'停止済み'}[ss.state]||ss.state;
+    const state={scheduled:'予約済み（開始待ち）',running:'実行中',paused:'一時停止中',done:'完了',stopped:'取り消し済み'}[ss.state]||ss.state;
     const rows=ss.steps.map(st=>`<div style="display:flex;gap:8px;align-items:center;font-size:12px;padding:3px 0;${ss.current_step===st.index?'font-weight:600;':''}"><span style="min-width:96px;">${st.start}–${st.end}</span><span style="flex:1;">${st.name}</span><span style="color:var(--color-text-tertiary);">${st.burstSec}秒 / ${st.gapMin}分ごと ・ ${st.fired}/${st.planned}回</span></div>`).join('');
     const lastLog=(ss.log||[]).slice(-3).reverse().map(l=>`<div style="font-size:11px;color:var(--color-text-tertiary);">${fmtT(l.t)} ${l.kind==='burst'?'噴霧 '+l.name:l.kind==='done'?'終了→停止':l.kind==='stop'?'手動停止':l.kind} ${ (l.results||[]).map(x=>x.ok?'✓':'✗'+(x.error||'')).join(' ') }</div>`).join('');
-    const active = ss.state==='scheduled'||ss.state==='running';
+    const active = ss.state==='scheduled'||ss.state==='running'||ss.state==='paused';
     sessHtml=`<div style="margin-top:12px;padding:10px 12px;border-radius:12px;background:${active?'var(--color-background-success)':'var(--color-background-tertiary)'};">
       <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:4px;"><span style="font-size:12px;font-weight:600;"><i class="ti ti-calendar-time" style="vertical-align:-2px;"></i> 予約セッション ${ss.date}</span><span style="font-size:11px;font-weight:600;padding:1px 8px;border-radius:999px;background:var(--color-background-primary);">${state}</span>
-        ${active?`<span style="font-size:12px;">次の噴霧 <b>${ss.next_burst_local||'—'}</b>${cur?'（'+cur.name+'）':nxt?'（'+nxt.name+' 開始）':''}</span><span style="flex:1;"></span><button onclick="liveCancel()" class="btn" style="font-size:12px;padding:5px 11px;cursor:pointer;border:1px solid var(--color-border-danger);color:var(--color-text-danger);border-radius:var(--border-radius-md);background:var(--color-background-primary);">予約を取り消して停止</button>`:''}</div>
+        ${active?`<span style="font-size:12px;">${ss.state==='paused'?'一時停止中（再開すると次の噴霧タイミングから）':'次の噴霧 <b>'+(ss.next_burst_local||'—')+'</b>'+(cur?'（'+cur.name+'）':nxt?'（'+nxt.name+' 開始）':'')}</span><span style="flex:1;"></span>${ss.state==='paused'?`<button onclick="liveResume()" class="btn btn-primary" style="font-size:12px;padding:5px 11px;cursor:pointer;font-weight:600;border-radius:var(--border-radius-md);">▶ 再開</button>`:''}<button onclick="liveCancel()" class="btn" style="font-size:12px;padding:5px 11px;cursor:pointer;border:1px solid var(--color-border-danger);color:var(--color-text-danger);border-radius:var(--border-radius-md);background:var(--color-background-primary);">予約を取り消して停止</button>`:''}</div>
       ${rows}${lastLog}</div>`;
   }
   return `<div class="card" style="border-radius:var(--border-radius-lg);padding:13px 16px;margin-bottom:14px;border:1px solid rgba(164,118,58,0.35);">
@@ -618,7 +618,7 @@ async function livePoll(force){
         if(uids.length){ const s=await hub('/api/command',{method:'POST',body:JSON.stringify({uids,cmd:'get_status'})}); LIVE.status=LIVE.status||{}; (s.results||[]).forEach(x=>{ if(x.ok) LIVE.status[x.uid]=x.response; }); } LIVE.lastSt=t; }
     }
     const sj=await hub('/api/session'); LIVE.session=sj.session; LIVE.now=sj.now_local;
-    const r=curRoom(); if(LIVE.session){ const a=LIVE.session.state==='running'||LIVE.session.state==='scheduled'; r.playing=LIVE.session.state==='running'; }
+    const r=curRoom(); if(LIVE.session){ r.playing=LIVE.session.state==='running'; }
   }catch(e){ LIVE.err=LIVE.err||e.message; }
   finally{ LIVE.busy=false; paintLive(); if($("roomlist")) renderList(); }
 }
@@ -634,12 +634,14 @@ async function liveBurst(){
 }
 async function liveStop(){
   const r=curRoom(), uids=roomUids(r);
-  try{ if(LIVE.session&&(LIVE.session.state==='running'||LIVE.session.state==='scheduled')) await hub('/api/session/stop',{method:'POST',body:'{}'});
+  try{ const active=LIVE.session&&(LIVE.session.state==='running'||LIVE.session.state==='scheduled');
+    if(active) await hub('/api/session/pause',{method:'POST',body:'{}'});
     if(uids.length) await hub('/api/session/stop-devices',{method:'POST',body:JSON.stringify({uids})});
-    r.playing=false; banner="現地の機体を停止しました（予約があれば取り消し）"; }
+    r.playing=false; banner=active?"現地の機体を停止しました。予約は一時停止中（「再開」で次の噴霧タイミングから続きます）":"現地の機体を停止しました"; }
   catch(e){ banner="停止失敗: "+e.message; }
   await livePoll(true); renderList(); renderPanel();
 }
+async function liveResume(){ try{ await hub('/api/session/resume',{method:'POST',body:'{}'}); banner="予約を再開しました。次の噴霧タイミングから続きます"; }catch(e){ banner="再開失敗: "+e.message; } await livePoll(true); renderPanel(); }
 async function liveCancel(){ try{ await hub('/api/session/stop',{method:'POST',body:'{}'}); banner="予約セッションを取り消し、機体を停止しました"; }catch(e){ banner="取り消し失敗: "+e.message; } await livePoll(true); renderPanel(); }
 async function liveSchedule(){
   const r=curRoom(), sl=r.sched[di][selSlot], uids=roomUids(r);
