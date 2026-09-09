@@ -370,6 +370,16 @@ function statusArea(){
       <div style="font-size:16px;font-weight:500;margin-bottom:${sl.memo?'2px':'10px'};"><i class="ti ti-clock" style="font-size:15px;vertical-align:-2px;"></i> ${sl.s}–${sl.e}</div>
       ${sl.memo?`<div style="font-size:13px;color:var(--color-text-secondary);margin-bottom:10px;">${sl.memo}</div>`:''}
       <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px;">${progChips(sl.prog)}</div>
+      ${sl.fromServer&&LIVE.session?(()=>{ const ss=LIVE.session, cur=ss.current_step!=null?ss.steps[ss.current_step]:null, nxt=ss.next_step!=null?ss.steps[ss.next_step]:null;
+        const state={scheduled:'予約済み（開始待ち）',running:'実行中',paused:'一時停止中',done:'完了'}[ss.state]||ss.state;
+        const rows=ss.steps.map(st=>`<div style="display:flex;gap:8px;font-size:12px;${ss.current_step===st.index?'font-weight:600;':''}"><span style="min-width:92px;">${st.start}–${st.end}</span><span style="flex:1;">${st.name}</span><span style="color:var(--color-text-tertiary);">${st.burstSec}秒 / ${st.gapMin}分ごと ・ ${st.fired}/${st.planned}回</span></div>`).join('');
+        return `<div style="margin:-4px 0 12px;padding:9px 12px;border-radius:10px;background:var(--color-background-primary);">
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px;"><span style="font-size:11px;font-weight:600;padding:1px 8px;border-radius:999px;background:${ss.state==='running'?'var(--color-background-success)':'var(--color-background-tertiary)'};">${state}</span>
+            ${ss.state==='paused'?'<span style="font-size:12px;">再開すると次の噴霧タイミングから続きます</span>':ss.state==='done'?'':'<span style="font-size:12px;">次の噴霧 <b>'+(ss.next_burst_local||'—')+'</b>'+(cur?'（'+cur.name+'）':nxt?'（'+nxt.name+' 開始）':'')+'</span>'}
+            <span style="flex:1;"></span>
+            ${ss.state==='paused'?'<button onclick="liveResume()" class="btn btn-primary" style="font-size:12px;padding:5px 11px;cursor:pointer;font-weight:600;border-radius:var(--border-radius-md);">▶ 再開</button>':''}
+            ${ss.state!=='done'?'<button onclick="liveCancel()" class="btn" style="font-size:12px;padding:5px 11px;cursor:pointer;border:1px solid var(--color-border-danger);color:var(--color-text-danger);border-radius:var(--border-radius-md);background:var(--color-background-primary);">予約を取り消して停止</button>':''}</div>
+          ${rows}</div>`; })():''}
       <div style="display:flex;gap:8px;flex-wrap:wrap;">
         <button onclick="openPicker('slot')" class="btn" style="font-size:13px;padding:8px 14px;cursor:pointer;border:1px solid var(--color-border-info);color:var(--color-text-info);border-radius:var(--border-radius-md);background:var(--color-background-primary);font-weight:500;"><i class="ti ti-replace" style="font-size:14px;vertical-align:-2px;"></i> この枠の香りを差し替え</button>
         <button onclick="playNow()" class="btn btn-primary" style="font-size:13px;padding:8px 14px;cursor:pointer;font-weight:600;border-radius:var(--border-radius-md);"><i class="ti ${isLive()?'ti-send':'ti-player-play'}" style="font-size:14px;vertical-align:-2px;"></i> ${isLive()?(sl.fromServer?'この枠を再送信（予約を置き換え）':'この枠を機体に予約送信（'+sl.s+'〜自動実行）'):'この香りを今すぐ再生'}</button>
@@ -398,7 +408,7 @@ function statusArea(){
           :`<button onclick="playLive()" class="btn btn-primary" style="font-size:13px;padding:8px 18px;cursor:pointer;font-weight:600;border-radius:var(--border-radius-md);"><i class="ti ti-player-play" style="font-size:14px;vertical-align:-2px;"></i> 再生</button>`}
       </div>
     </div>
-    <div style="font-size:11px;color:var(--color-text-tertiary);margin-top:9px;"><i class="ti ti-bolt" style="vertical-align:-1px;"></i> 「再生」を押すと現地の ScentGem に配信が届きます ／ 下の枠をタップで個別編集</div>
+    <div style="font-size:11px;color:var(--color-text-tertiary);margin-top:9px;"><i class="ti ti-bolt" style="vertical-align:-1px;"></i> ${isLive()&&LIVE.session&&(LIVE.session.state==='running'||LIVE.session.state==='scheduled'||LIVE.session.state==='paused')?'予約 '+({scheduled:'開始待ち',running:'実行中',paused:'一時停止中'}[LIVE.session.state])+(LIVE.session.next_burst_local?' ・ 次の噴霧 '+LIVE.session.next_burst_local:'')+' ／ 下の枠をタップで詳細':'「再生」を押すと現地の ScentGem に配信が届きます ／ 下の枠をタップで個別編集'}</div>
   </div>`;
 }
 
@@ -455,7 +465,7 @@ function renderRoom(){
 
 function selectSlot(i){selSlot=i;renderPanel();}
 function clearSel(){selSlot=null;renderPanel();}
-function deleteSlot(){const r=curRoom();const sl=r.sched[di][selSlot];r.sched[di].splice(selSlot,1);selSlot=null;banner="配信枠（"+sl.s+"–"+sl.e+"）を削除しました";renderPanel();}
+function deleteSlot(){const r=curRoom();const sl=r.sched[di][selSlot]; if(sl&&sl.fromServer){ return liveCancel(); }r.sched[di].splice(selSlot,1);selSlot=null;banner="配信枠（"+sl.s+"–"+sl.e+"）を削除しました";renderPanel();}
 function playNow(){if(isLive()) return liveSchedule();const sl=curRoom().sched[di][selSlot];const k=sl.prog[0][0];curRoom().scent=k;curRoom().playing=true;banner=sl.s+"–"+sl.e+" の香り（"+LMAP[k].n+"）を現地で再生開始しました";renderList();renderPanel();}
 function playLive(){if(isLive()) return liveBurst();curRoom().playing=true;banner="「"+LMAP[curRoom().scent].n+"」の再生を現地に配信しました";renderList();renderPanel();}
 function stopLive(){if(isLive()) return liveStop();curRoom().playing=false;banner="現地の再生を停止しました";renderList();renderPanel();}
@@ -606,25 +616,13 @@ function liveArea(r){
   }).join('');
   const all = LIVE.devices.map(d=>{ const sel=(r.serials||[]).includes(d.reported_serial);
     return `<label style="display:inline-flex;align-items:center;gap:5px;font-size:12px;padding:3px 9px;border:1px solid ${sel?'var(--accent)':'var(--color-border-tertiary)'};border-radius:999px;cursor:pointer;background:${sel?'var(--accent-soft)':'transparent'};"><input type="checkbox" ${sel?'checked':''} onchange="toggleSerial('${d.reported_serial}',this.checked)" style="margin:0;">${shortSerial(d.reported_serial)}<span style="width:7px;height:7px;border-radius:50%;background:${d.online?'#2e9e5b':'#bbb'};"></span></label>`; }).join(' ');
-  const ss=LIVE.session; let sessHtml='';
-  if(ss){ const cur=ss.current_step!=null?ss.steps[ss.current_step]:null, nxt=ss.next_step!=null?ss.steps[ss.next_step]:null;
-    const state={scheduled:'予約済み（開始待ち）',running:'実行中',paused:'一時停止中',done:'完了',stopped:'取り消し済み'}[ss.state]||ss.state;
-    const rows=ss.steps.map(st=>`<div style="display:flex;gap:8px;align-items:center;font-size:12px;padding:3px 0;${ss.current_step===st.index?'font-weight:600;':''}"><span style="min-width:96px;">${st.start}–${st.end}</span><span style="flex:1;">${st.name}</span><span style="color:var(--color-text-tertiary);">${st.burstSec}秒 / ${st.gapMin}分ごと ・ ${st.fired}/${st.planned}回</span></div>`).join('');
-    const lastLog=(ss.log||[]).slice(-3).reverse().map(l=>`<div style="font-size:11px;color:var(--color-text-tertiary);">${fmtT(l.t)} ${l.kind==='burst'?'噴霧 '+l.name:l.kind==='done'?'終了→停止':l.kind==='stop'?'手動停止':l.kind} ${ (l.results||[]).map(x=>x.ok?'✓':'✗'+(x.error||'')).join(' ') }</div>`).join('');
-    const active = ss.state==='scheduled'||ss.state==='running'||ss.state==='paused';
-    sessHtml=`<div style="margin-top:12px;padding:10px 12px;border-radius:12px;background:${active?'var(--color-background-success)':'var(--color-background-tertiary)'};">
-      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:4px;"><span style="font-size:12px;font-weight:600;"><i class="ti ti-calendar-time" style="vertical-align:-2px;"></i> 予約セッション ${ss.date}</span><span style="font-size:11px;font-weight:600;padding:1px 8px;border-radius:999px;background:var(--color-background-primary);">${state}</span>
-        ${active?`<span style="font-size:12px;">${ss.state==='paused'?'一時停止中（再開すると次の噴霧タイミングから）':'次の噴霧 <b>'+(ss.next_burst_local||'—')+'</b>'+(cur?'（'+cur.name+'）':nxt?'（'+nxt.name+' 開始）':'')}</span><span style="flex:1;"></span>${ss.state==='paused'?`<button onclick="liveResume()" class="btn btn-primary" style="font-size:12px;padding:5px 11px;cursor:pointer;font-weight:600;border-radius:var(--border-radius-md);">▶ 再開</button>`:''}<button onclick="liveCancel()" class="btn" style="font-size:12px;padding:5px 11px;cursor:pointer;border:1px solid var(--color-border-danger);color:var(--color-text-danger);border-radius:var(--border-radius-md);background:var(--color-background-primary);">予約を取り消して停止</button>`:''}</div>
-      ${rows}${lastLog}</div>`;
-  }
   return `<div class="card" style="border-radius:var(--border-radius-lg);padding:13px 16px;margin-bottom:14px;border:1px solid rgba(164,118,58,0.35);">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-wrap:wrap;gap:6px;">
       <span style="font-size:12px;font-weight:600;letter-spacing:0.3px;"><i class="ti ti-cloud-data-connection" style="font-size:14px;vertical-align:-2px;color:var(--accent);"></i> 実機接続（Wi-Fi クラウド経由・カートリッジ残量 12本）</span>
       <span style="font-size:11px;color:var(--color-text-tertiary);">サーバー時刻 ${LIVE.now?LIVE.now:'—'} ・ ${LIVE.err?'<span style="color:var(--color-text-danger)">'+LIVE.err+'</span>':'接続OK'}</span>
     </div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;">${devRows||'<span style="font-size:12px;color:var(--color-text-tertiary);">機体が割り当てられていません</span>'}</div>
-    <div style="margin-top:10px;font-size:11px;color:var(--color-text-tertiary);">この部屋の機体: ${all||'（クラウドに機体なし）'}</div>
-    ${sessHtml}</div>`;
+    <div style="margin-top:10px;font-size:11px;color:var(--color-text-tertiary);">この部屋の機体: ${all||'（クラウドに機体なし）'}</div></div>`;
 }
 
 // サーバーの予約セッション → 今日のスケジュール表の枠に反映（fromServer 印。再読み込みしても消えない）
@@ -633,7 +631,7 @@ function syncSessionSlot(){
   if(!isLive()) return; const r=curRoom(); const d=todayIdx(); r.sched[d]=(r.sched[d]||[]).filter(sl=>!sl.fromServer);
   const ss=LIVE.session; if(!ss||!ss.steps||!ss.steps.length) return;
   const today=new Date(); const ds=today.getFullYear()+'-'+String(today.getMonth()+1).padStart(2,'0')+'-'+String(today.getDate()).padStart(2,'0');
-  if(ss.date!==ds || ss.state==='stopped') return;
+  if(ss.date!==ds || ss.state==='stopped' || ss.state==='done') return;
   const steps=[...ss.steps].sort((a,b)=>t2m(a.start)-t2m(b.start));
   const prog=steps.map(st=>[scentIdOfStep(st), Math.max(1,t2m(st.end)-t2m(st.start))]);
   const label={scheduled:'予約済み',running:'実行中',paused:'一時停止中',done:'完了'}[ss.state]||'';
@@ -679,7 +677,7 @@ async function liveStop(){
   await livePoll(true); renderList(); renderPanel();
 }
 async function liveResume(){ try{ await hub('/api/session/resume',{method:'POST',body:'{}'}); banner="予約を再開しました。次の噴霧タイミングから続きます"; }catch(e){ banner="再開失敗: "+e.message; } await livePoll(true); renderPanel(); }
-async function liveCancel(){ try{ await hub('/api/session/stop',{method:'POST',body:'{}'}); banner="予約セッションを取り消し、機体を停止しました"; }catch(e){ banner="取り消し失敗: "+e.message; } await livePoll(true); renderPanel(); }
+async function liveCancel(){ try{ await hub('/api/session/stop',{method:'POST',body:'{}'}); banner="予約を取り消し、機体を停止しました"; }catch(e){ banner="取り消し失敗: "+e.message; } selSlot=null; await livePoll(true); renderPanel(); }
 async function liveSchedule(){
   const r=curRoom(), sl=r.sched[di][selSlot], uids=roomUids(r);
   if(!uids.length){ banner="機体が割り当てられていません"; return renderPanel(); }
