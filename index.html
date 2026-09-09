@@ -586,9 +586,6 @@ function liveArea(r){
   }).join('');
   const all = LIVE.devices.map(d=>{ const sel=(r.serials||[]).includes(d.reported_serial);
     return `<label style="display:inline-flex;align-items:center;gap:5px;font-size:12px;padding:3px 9px;border:1px solid ${sel?'var(--accent)':'var(--color-border-tertiary)'};border-radius:999px;cursor:pointer;background:${sel?'var(--accent-soft)':'transparent'};"><input type="checkbox" ${sel?'checked':''} onchange="toggleSerial('${d.reported_serial}',this.checked)" style="margin:0;">${shortSerial(d.reported_serial)}<span style="width:7px;height:7px;border-radius:50%;background:${d.online?'#2e9e5b':'#bbb'};"></span></label>`; }).join(' ');
-  const recipeRow = [curRoom().scent, ...(((curRoom().sched[di]||[]).flatMap(sl=>sl.prog.map(p=>p[0]))))].filter((k,i,a)=>a.indexOf(k)===i).slice(0,4).map(k=>{ const j=LMAP[k]||{n:k,img:""}, u=usfSummary(k);
-    const chips=u?u.act.map(x=>`<span style="font-size:11px;padding:1px 7px;border-radius:999px;background:var(--color-background-tertiary);">ch${x[0]} <b>${x[1]}%</b></span>`).join(' '):'<span style="font-size:11px;color:var(--color-text-danger);">レシピ未取得</span>';
-    return `<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:12px;"><img src="${j.img}" style="width:22px;height:22px;border-radius:50%;object-fit:cover;background:var(--color-background-tertiary);"><span style="font-weight:600;min-width:64px;">${j.n}</span><span style="color:var(--color-text-tertiary);font-size:11px;">${SCENTS[k]?SCENTS[k].usfId:''}</span> ${chips} ${u?`<span style="font-size:11px;color:var(--color-text-secondary);">${u.burstSec}秒噴霧 ・ ファン${u.fan}%</span>`:''}</div>`; }).join('');
   const ss=LIVE.session; let sessHtml='';
   if(ss){ const cur=ss.current_step!=null?ss.steps[ss.current_step]:null, nxt=ss.next_step!=null?ss.steps[ss.next_step]:null;
     const state={scheduled:'予約済み（開始待ち）',running:'実行中',done:'完了',stopped:'停止済み'}[ss.state]||ss.state;
@@ -607,9 +604,6 @@ function liveArea(r){
     </div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;">${devRows||'<span style="font-size:12px;color:var(--color-text-tertiary);">機体が割り当てられていません</span>'}</div>
     <div style="margin-top:10px;font-size:11px;color:var(--color-text-tertiary);">この部屋の機体: ${all||'（クラウドに機体なし）'}</div>
-    <div style="margin-top:10px;font-size:11px;font-weight:600;color:var(--color-text-secondary);"><i class="ti ti-flask" style="vertical-align:-1px;"></i> Scentdays スマートフレグランスのレシピ（配信データそのまま機体へ）</div>
-    <div style="margin-top:6px;display:flex;flex-direction:column;gap:6px;">${recipeRow}</div>
-    <div style="font-size:11px;color:var(--color-text-tertiary);margin-top:6px;">噴霧秒数・配合・ファンは Scentdays のレシピ値。繰り返しの間隔は下の「噴霧の間隔」（既定5分＝アプリのインターバル再生と同じ）。</div>
     ${sessHtml}</div>`;
 }
 function paintLive(){ if(!isLive()||mode!=="room") return; const el=$("liveCard"); if(el) el.innerHTML=liveArea(curRoom()); const h=$("idLine"); if(h) h.innerHTML=liveIdLine(curRoom()); }
