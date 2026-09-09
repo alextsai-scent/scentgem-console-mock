@@ -524,22 +524,34 @@ function renderAdd(){
     </div>
     <div><label style="font-size:12px;color:var(--color-text-secondary);display:block;margin-bottom:4px;">配信する香り</label>
       <select id="f_scent" style="width:100%;">${opts}</select></div>
+    ${isLive()?`<div style="display:flex;gap:12px;align-items:flex-end;">
+      <div style="flex:1;"><label style="font-size:12px;color:var(--color-text-secondary);display:block;margin-bottom:4px;">途中で切り替える香り（任意）</label><select id="f_scent2" style="width:100%;"><option value="">（なし）</option>${opts}</select></div>
+      <div style="flex:0 0 130px;"><label style="font-size:12px;color:var(--color-text-secondary);display:block;margin-bottom:4px;">切り替え時刻</label><input id="f_sw" type="time" style="width:100%;"></div>
+    </div>`:''}
     <div><label style="font-size:12px;color:var(--color-text-secondary);display:block;margin-bottom:4px;">メモ（任意）</label>
       <input id="f_memo" placeholder="例: 終日 BGM / イベント用 など" style="width:100%;"></div>
-    <div style="font-size:11px;color:var(--color-text-tertiary);"><i class="ti ti-info-circle" style="vertical-align:-1px;"></i> 「最初これ→30分後これ」の複数ステップ配信は本実装で対応予定（今は1香り）</div>
+    <div style="font-size:11px;color:var(--color-text-tertiary);"><i class="ti ti-info-circle" style="vertical-align:-1px;"></i> ${isLive()?'登録するとそのまま機体クラウドに予約されます（噴霧はレシピの秒数・間隔は「噴霧の間隔」の設定）。予約は同時に1つ＝既存の予約は置き換わります':'「最初これ→30分後これ」の複数ステップ配信は本実装で対応予定（今は1香り）'}</div>
     <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:4px;">
       <button onclick="cancelTo()" style="font-size:13px;padding:8px 16px;cursor:pointer;border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-md);background:var(--color-background-primary);">キャンセル</button>
       <button onclick="saveAdd()" style="font-size:13px;padding:8px 18px;cursor:pointer;border:0.5px solid var(--color-border-info);color:var(--color-text-info);font-weight:500;border-radius:var(--border-radius-md);background:var(--color-background-primary);"><i class="ti ti-calendar-plus" style="vertical-align:-2px;"></i> 登録</button>
     </div>
   </div>`;
 }
-function saveAdd(){
+async function saveAdd(){
   const s=$("f_s").value,e=$("f_e").value,sc=$("f_scent").value,memo=$("f_memo").value;
   const r=curRoom();
   if(!r.sched[di])r.sched[di]=[];
-  r.sched[di].push(L(s,e,[[sc,(t2m(e)-t2m(s))||60]],memo));
-  r.sched[di].sort((a,b)=>t2m(a.s)-t2m(b.s));
-  banner="配信枠（"+s+"–"+e+"）を登録しました";mode="room";renderPanel();
+  if(t2m(e)<=t2m(s)){ banner="終了は開始より後にしてください"; return renderPanel(); }
+  let prog=[[sc,(t2m(e)-t2m(s))||60]];
+  if(isLive()){ const sc2=$("f_scent2")&&$("f_scent2").value, sw=$("f_sw")&&$("f_sw").value;
+    if(sc2&&sw&&t2m(sw)>t2m(s)&&t2m(sw)<t2m(e)) prog=[[sc,t2m(sw)-t2m(s)],[sc2,t2m(e)-t2m(sw)]]; }
+  const sl=L(s,e,prog,memo);
+  r.sched[di]=r.sched[di].filter(x=>!(x.s===s&&x.e===e));
+  r.sched[di].push(sl); r.sched[di].sort((a,b)=>t2m(a.s)-t2m(b.s));
+  mode="room";
+  if(isLive()){ if(di!==todayIdx()){ banner="枠を置きました。機体への予約は今日の曜日タブの枠だけ送れます"; return renderPanel(); }
+    selSlot=r.sched[di].indexOf(sl); await liveSchedule(); return; }
+  banner="配信枠（"+s+"–"+e+"）を登録しました";renderPanel();
 }
 
 
@@ -678,7 +690,8 @@ async function liveSchedule(){
   const on=steps.map(s=>s.burstSec+'秒').join('/');
   const today=new Date(), date=today.getFullYear()+'-'+String(today.getMonth()+1).padStart(2,'0')+'-'+String(today.getDate()).padStart(2,'0');
   if(di!==todayIdx()){ banner="予約送信は「今日」の曜日タブの枠だけ対応（今日="+DAYS[todayIdx()]+"）"; return renderPanel(); }
-  if(!confirm(`${TENANTS[ti].stores[si].name} / ${r.name}\n${steps.map(s=>s.start+'–'+s.end+' '+s.name+'（'+s.burstSec+'秒 / '+gap+'分ごと）').join('\n')}\n\n機体 ${uids.length}台に予約送信します。よろしいですか？`)) return;
+  const ex=LIVE.session&&(LIVE.session.state==='scheduled'||LIVE.session.state==='running'||LIVE.session.state==='paused')?LIVE.session:null;
+  if(!confirm(`${TENANTS[ti].stores[si].name} / ${r.name}\n${steps.map(s=>s.start+'–'+s.end+' '+s.name+'（'+s.burstSec+'秒 / '+gap+'分ごと）').join('\n')}\n\n機体 ${uids.length}台に予約送信します。${ex?'\n⚠ 既存の予約（'+ex.steps[0].start+'〜'+ex.steps[ex.steps.length-1].end+'）は置き換わります。':''}よろしいですか？`)) return;
   try{ await hub('/api/session',{method:'POST',body:JSON.stringify({uids,steps,date,label:TENANTS[ti].name+' '+TENANTS[ti].stores[si].name})});
     banner=`${sl.s}–${sl.e} の配信をクラウドに予約しました。開始時刻に自動で噴霧が始まります`; }
   catch(e){ banner="予約失敗: "+e.message; }
