@@ -184,8 +184,7 @@ const LIVE_SERIALS=["ScentGem_20500D1B399A","ScentGem_20500D1B4926"];
 const TENANTS=[
  {id:"zen", name:"zen place", live:true, stores:[
    {id:"nkm", name:"中目黒スタジオ", rooms:[
-     Object.assign(rm("001","スタジオ（ScentGem 2台）",CALM,false,{[todayIdx()]:[
-        L("11:00","12:00",[[CALM,40],[AWAKE,20]],"テスト導入") ]}),{serials:LIVE_SERIALS.slice(),area:40,gapMin:5})
+     Object.assign(rm("001","スタジオ（ScentGem 2台）",CALM,false,{}),{serials:LIVE_SERIALS.slice(),area:40,gapMin:5})   // 枠はサーバーの予約が正本（初期枠は置かない）
    ]}
  ]},
  {id:"sa", name:"サンプル法人A（ヨガ）", stores:[
