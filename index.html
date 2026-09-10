@@ -272,7 +272,9 @@ function sprayViz(on,g){
   const seg=`<span style="flex:${on};min-width:6px;height:100%;display:block;background:var(--accent-grad);"></span><span style="flex:${g*60};min-width:14px;height:100%;display:block;"></span>`;
   return seg.repeat(3);
 }
-function liveBurstSec(k){ const u=usfSummary(k); return u?u.burstSec:10; }
+function recipeBurstSec(k){ const u=usfSummary(k); return u?u.burstSec:10; }
+function liveBurstSec(k){ const r=curRoom(); return (r.burstOverride>0)?r.burstOverride:recipeBurstSec(k); }
+function onBurst(v){ const n=parseInt(v,10); const r=curRoom(); if(isNaN(n)||n<=0){ r.burstOverride=0; } else r.burstOverride=Math.max(5,Math.min(300,n)); try{localStorage.setItem('live_burst_'+r.id,String(r.burstOverride||0));}catch{} renderPanel(); }
 function sprayArea(r){
   if(isLive()){
     const g=r.gapMin||5,on=liveBurstSec(r.scent),cyc=on+g*60,perH=Math.max(1,Math.round(3600/cyc));
@@ -283,15 +285,18 @@ function sprayArea(r){
       <span style="font-size:11px;font-weight:600;color:var(--accent);background:var(--accent-soft);border:1px solid rgba(164,118,58,0.3);padding:2px 9px;border-radius:999px;">レシピから自動</span>
     </div>
     <div style="display:flex;gap:9px;flex-wrap:wrap;align-items:center;">
-      <span style="font-size:12px;color:var(--color-text-secondary);">1回の噴霧 <b style="color:var(--color-text-primary);">${fmtDur(on)}</b>（${LMAP[r.scent]?LMAP[r.scent].n:''} のレシピ）</span>
+      <label style="font-size:12px;color:var(--color-text-secondary);">1回の噴霧</label>
+      <input id="burstIn" type="number" min="5" max="300" value="${on}" onchange="onBurst(this.value)" style="width:76px;height:34px;text-align:right;font-weight:600;"><span style="font-size:12px;color:var(--color-text-secondary);">秒</span>
+      <span style="font-size:11px;color:var(--color-text-tertiary);">${r.burstOverride>0?`レシピは${recipeBurstSec(r.scent)}秒 <a href="#" onclick="onBurst('');return false;" style="color:var(--accent);">戻す</a>`:`（${LMAP[r.scent]?LMAP[r.scent].n:''} のレシピ値）`}</span>
       <label style="font-size:12px;color:var(--color-text-secondary);margin-left:8px;">噴霧の間隔</label>
       <select id="gapIn" onchange="onGap(this.value)" style="height:34px;width:auto;">${gopts}</select>
       <span id="cycSum" style="font-size:12px;color:var(--color-text-secondary);">→ 約${perH}回/時</span>
-      ${(()=>{ const ss=LIVE.session; const active=ss&&(ss.state==='scheduled'||ss.state==='running'||ss.state==='paused'); if(!active) return '';
-        const cur=ss.steps[0]&&ss.steps[0].gapMin; return cur!==g
-          ? `<button onclick="liveSaveGap()" class="btn btn-primary" style="font-size:12px;padding:7px 13px;cursor:pointer;font-weight:600;border-radius:var(--border-radius-md);"><i class="ti ti-device-floppy" style="vertical-align:-2px;"></i> 保存（予約の以降を${g}分ごとに）</button><span style="font-size:11px;color:var(--color-text-danger);">予約は今 ${cur}分ごと</span>`
-          : `<span style="font-size:11px;color:var(--color-text-success);"><i class="ti ti-circle-check" style="vertical-align:-1px;"></i> 予約に反映済み（${cur}分ごと）</span>`; })()}
     </div>
+    ${(()=>{ const ss=LIVE.session; const active=ss&&(ss.state==='scheduled'||ss.state==='running'||ss.state==='paused'); if(!active) return '';
+        const cg=ss.steps[0]&&ss.steps[0].gapMin, cb=ss.steps[0]&&ss.steps[0].burstSec; const diff=(cg!==g)||(cb!==on);
+        return `<div style="display:flex;gap:9px;flex-wrap:wrap;align-items:center;margin-top:10px;">${diff
+          ? `<button onclick="liveSaveCycle()" class="btn btn-primary" style="font-size:12px;padding:7px 13px;cursor:pointer;font-weight:600;border-radius:var(--border-radius-md);"><i class="ti ti-device-floppy" style="vertical-align:-2px;"></i> 保存（予約の以降を ${on}秒 / ${g}分ごと に）</button><span style="font-size:11px;color:var(--color-text-danger);">予約は今 ${cb}秒 / ${cg}分ごと</span>`
+          : `<span style="font-size:11px;color:var(--color-text-success);"><i class="ti ti-circle-check" style="vertical-align:-1px;"></i> 予約に反映済み（${cb}秒 / ${cg}分ごと）</span>`}</div>`; })()}
     <div id="liveNow" style="margin-top:12px;">${liveNowHtml()}</div>
   </div>`;
   }
@@ -329,10 +334,11 @@ function sprayArea(r){
 }
 function onArea(v){ const n=parseInt(v,10); if(isNaN(n)) return; curRoom().area=Math.max(1,Math.min(500,n)); paintSpray(); }
 function onGap(v){ curRoom().gapMin=+v; if(isLive()){ try{localStorage.setItem('live_gap_'+curRoom().id,String(+v));}catch{} return renderPanel(); } paintSpray(); }
-async function liveSaveGap(){ const g=curRoom().gapMin||5;
-  try{ const r=await hub('/api/session/gap',{method:'POST',body:JSON.stringify({gapMin:g})}); banner="予約の間隔を"+g+"分に変更しました。以降の噴霧は"+g+"分ごと（次の噴霧 "+(r.session&&r.session.next_burst_local||'—')+"）"; }
-  catch(e){ banner="間隔の変更失敗: "+e.message; }
+async function liveSaveCycle(){ const r=curRoom(), g=r.gapMin||5, b=liveBurstSec(r.scent);
+  try{ const j=await hub('/api/session/cycle',{method:'POST',body:JSON.stringify({gapMin:g,burstSec:b})}); banner="予約の噴霧サイクルを "+b+"秒 / "+g+"分ごと に変更しました。以降はこの設定で回ります（次の噴霧 "+(j.session&&j.session.next_burst_local||'—')+"）"; }
+  catch(e){ banner="変更失敗: "+e.message; }
   await livePoll(true); renderPanel(); }
+const liveSaveGap=liveSaveCycle;
 function paintSpray(){
   const r=curRoom(),a=r.area||40,g=r.gapMin||15,on=sprayCfg(a).on,cyc=on+g*60,perH=Math.max(1,Math.round(3600/cyc));
   if(!$("onBig")) return;
@@ -682,7 +688,7 @@ function liveStart(){ if(LIVE.timer) clearInterval(LIVE.timer); LIVE.timer=setIn
 async function liveBurst(){
   const r=curRoom(), uids=roomUids(r); if(!uids.length){ banner="機体が割り当てられていません"; return renderPanel(); }
   const u=usfSummary(r.scent); if(!u){ banner="レシピが取得できていません（Scentdays カタログ未取得）"; return renderPanel(); }
-  const on=u.burstSec;
+  const on=liveBurstSec(r.scent);
   try{ const j=await hub('/api/session/burst',{method:'POST',body:JSON.stringify({uids,channels:u.channels,burstSec:on,fanSpeed:u.fan})});
     const ok=j.results.filter(x=>x.ok).length; r.playing=ok>0; if(ok>0){ LIVE.manualStart=j.started_at||Date.now(); LIVE.manualUntil=j.spray_until||(Date.now()+on*1000); LIVE.offset=(j.now||Date.now())-Date.now(); LIVE.phase='spraying'; LIVE.sprayUntil=LIVE.manualUntil; LIVE.sprayStarted=LIVE.manualStart; } banner=`「${LMAP[r.scent].n}」を ${on}秒 噴霧: ${ok}/${j.results.length}台 OK`+(ok<j.results.length?'（'+j.results.filter(x=>!x.ok).map(x=>x.error).join(', ')+'）':'');
   }catch(e){ banner="送信失敗: "+e.message; }
@@ -705,7 +711,7 @@ async function liveSchedule(){
   const gap=r.gapMin||5;
   let cur=t2m(sl.s); const steps=[];
   for(const [k,min] of sl.prog){ const u=usfSummary(k); if(!u){ banner="「"+(LMAP[k]?LMAP[k].n:k)+"」のレシピが取得できていません"; return renderPanel(); }
-    const s=cur, e=Math.min(cur+min,t2m(sl.e)); steps.push({name:LMAP[k].n, sid:(SCENTS[k]&&SCENTS[k].usfId)||k.slice(-20), start:mm(s), end:mm(e), channels:u.channels, burstSec:u.burstSec, gapMin:gap, fanSpeed:u.fan}); cur=e; }
+    const s=cur, e=Math.min(cur+min,t2m(sl.e)); steps.push({name:LMAP[k].n, sid:(SCENTS[k]&&SCENTS[k].usfId)||k.slice(-20), start:mm(s), end:mm(e), channels:u.channels, burstSec:(r.burstOverride>0?r.burstOverride:u.burstSec), gapMin:gap, fanSpeed:u.fan}); cur=e; }
   const on=steps.map(s=>s.burstSec+'秒').join('/');
   const today=new Date(), date=today.getFullYear()+'-'+String(today.getMonth()+1).padStart(2,'0')+'-'+String(today.getDate()).padStart(2,'0');
   if(di!==todayIdx()){ banner="予約送信は「今日」の曜日タブの枠だけ対応（今日="+DAYS[todayIdx()]+"）"; return renderPanel(); }
@@ -721,7 +727,7 @@ const _onTenant=onTenant; onTenant=function(){ _onTenant(); if(isLive()){ di=tod
 const _selRoom=selRoom; selRoom=function(i){ _selRoom(i); if(isLive()){ di=todayIdx(); renderPanel(); livePoll(true); } };
 
 if(location.hash.indexOf("picker")>=0){mode="picker";}
-fillSel();renderList();if(isLive()){di=todayIdx(); try{const g=+localStorage.getItem('live_gap_'+curRoom().id); if(g>0) curRoom().gapMin=g;}catch{} }renderPanel();
+fillSel();renderList();if(isLive()){di=todayIdx(); try{const g=+localStorage.getItem('live_gap_'+curRoom().id); if(g>0) curRoom().gapMin=g; const b=+localStorage.getItem('live_burst_'+curRoom().id); if(b>0) curRoom().burstOverride=b;}catch{} }renderPanel();
 if(isLive()) liveStart();
 </script>
 </body>
