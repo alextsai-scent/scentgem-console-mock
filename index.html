@@ -335,7 +335,7 @@ function sprayArea(r){
 function onArea(v){ const n=parseInt(v,10); if(isNaN(n)) return; curRoom().area=Math.max(1,Math.min(500,n)); paintSpray(); }
 function onGap(v){ curRoom().gapMin=+v; if(isLive()){ try{localStorage.setItem('live_gap_'+curRoom().id,String(+v));}catch{} return renderPanel(); } paintSpray(); }
 async function liveSaveCycle(){ const r=curRoom(), g=r.gapMin||5, b=liveBurstSec(r.scent);
-  try{ const j=await hub('/api/session/cycle',{method:'POST',body:JSON.stringify({gapMin:g,burstSec:b})}); banner="予約の噴霧サイクルを "+b+"秒 / "+g+"分ごと に変更しました。以降はこの設定で回ります（次の噴霧 "+(j.session&&j.session.next_burst_local||'—')+"）"; }
+  try{ const j=await hub('/api/session/cycle',{method:'POST',body:JSON.stringify({gapMin:g,burstSec:b,id:LIVE.session&&LIVE.session.id})}); banner="予約の噴霧サイクルを "+b+"秒 / "+g+"分ごと に変更しました。以降はこの設定で回ります（次の噴霧 "+(j.session&&j.session.next_burst_local||'—')+"）"; }
   catch(e){ banner="変更失敗: "+e.message; }
   await livePoll(true); renderPanel(); }
 const liveSaveGap=liveSaveCycle;
@@ -376,15 +376,15 @@ function statusArea(){
       <div style="font-size:16px;font-weight:500;margin-bottom:${sl.memo?'2px':'10px'};"><i class="ti ti-clock" style="font-size:15px;vertical-align:-2px;"></i> ${sl.s}–${sl.e}</div>
       ${sl.memo?`<div style="font-size:13px;color:var(--color-text-secondary);margin-bottom:10px;">${sl.memo}</div>`:''}
       <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px;">${progChips(sl.prog)}</div>
-      ${sl.fromServer&&LIVE.session?(()=>{ const ss=LIVE.session, cur=ss.current_step!=null?ss.steps[ss.current_step]:null, nxt=ss.next_step!=null?ss.steps[ss.next_step]:null;
+      ${sl.fromServer&&sessionOfSlot(sl)?(()=>{ const ss=sessionOfSlot(sl), cur=ss.current_step!=null?ss.steps[ss.current_step]:null, nxt=ss.next_step!=null?ss.steps[ss.next_step]:null;
         const state={scheduled:'予約済み（開始待ち）',running:'実行中',paused:'一時停止中',done:'完了'}[ss.state]||ss.state;
         const rows=ss.steps.map(st=>`<div style="display:flex;gap:8px;font-size:12px;${ss.current_step===st.index?'font-weight:600;':''}"><span style="min-width:92px;">${st.start}–${st.end}</span><span style="flex:1;">${st.name}</span><span style="color:var(--color-text-tertiary);">${st.burstSec}秒 / ${st.gapMin}分ごと ・ ${st.fired}/${st.planned}回</span></div>`).join('');
         return `<div style="margin:-4px 0 12px;padding:9px 12px;border-radius:10px;background:var(--color-background-primary);">
           <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px;"><span style="font-size:11px;font-weight:600;padding:1px 8px;border-radius:999px;background:${ss.state==='running'?'var(--color-background-success)':'var(--color-background-tertiary)'};">${state}</span>
             ${ss.state==='paused'?'<span style="font-size:12px;">再開すると次の噴霧タイミングから続きます</span>':ss.state==='done'?'':'<span style="font-size:12px;">次の噴霧 <b>'+(ss.next_burst_local||'—')+'</b>'+(cur?'（'+cur.name+'）':nxt?'（'+nxt.name+' 開始）':'')+'</span>'}
             <span style="flex:1;"></span>
-            ${ss.state==='paused'?'<button onclick="liveResume()" class="btn btn-primary" style="font-size:12px;padding:5px 11px;cursor:pointer;font-weight:600;border-radius:var(--border-radius-md);">▶ 再開</button>':''}
-            ${ss.state!=='done'?'<button onclick="liveCancel()" class="btn" style="font-size:12px;padding:5px 11px;cursor:pointer;border:1px solid var(--color-border-danger);color:var(--color-text-danger);border-radius:var(--border-radius-md);background:var(--color-background-primary);">予約を取り消して停止</button>':''}</div>
+            ${ss.state==='paused'?'<button onclick="liveResume(\''+ss.id+'\')" class="btn btn-primary" style="font-size:12px;padding:5px 11px;cursor:pointer;font-weight:600;border-radius:var(--border-radius-md);">▶ 再開</button>':''}
+            ${ss.state!=='done'?'<button onclick="liveCancel(\''+ss.id+'\')" class="btn" style="font-size:12px;padding:5px 11px;cursor:pointer;border:1px solid var(--color-border-danger);color:var(--color-text-danger);border-radius:var(--border-radius-md);background:var(--color-background-primary);">予約を取り消して停止</button>':''}</div>
           ${rows}</div>`; })():''}
       <div style="display:flex;gap:8px;flex-wrap:wrap;">
         <button onclick="openPicker('slot')" class="btn" style="font-size:13px;padding:8px 14px;cursor:pointer;border:1px solid var(--color-border-info);color:var(--color-text-info);border-radius:var(--border-radius-md);background:var(--color-background-primary);font-weight:500;"><i class="ti ti-replace" style="font-size:14px;vertical-align:-2px;"></i> この枠の香りを差し替え</button>
@@ -471,7 +471,7 @@ function renderRoom(){
 
 function selectSlot(i){selSlot=i;renderPanel();}
 function clearSel(){selSlot=null;renderPanel();}
-function deleteSlot(){const r=curRoom();const sl=r.sched[di][selSlot]; if(sl&&sl.fromServer){ return liveCancel(); }r.sched[di].splice(selSlot,1);selSlot=null;banner="配信枠（"+sl.s+"–"+sl.e+"）を削除しました";renderPanel();}
+function deleteSlot(){const r=curRoom();const sl=r.sched[di][selSlot]; if(sl&&sl.fromServer){ return liveCancel(sl.sessionId); }r.sched[di].splice(selSlot,1);selSlot=null;banner="配信枠（"+sl.s+"–"+sl.e+"）を削除しました";renderPanel();}
 function playNow(){if(isLive()) return liveSchedule();const sl=curRoom().sched[di][selSlot];const k=sl.prog[0][0];curRoom().scent=k;curRoom().playing=true;banner=sl.s+"–"+sl.e+" の香り（"+LMAP[k].n+"）を現地で再生開始しました";renderList();renderPanel();}
 function playLive(){if(isLive()) return liveBurst();curRoom().playing=true;banner="「"+LMAP[curRoom().scent].n+"」の再生を現地に配信しました";renderList();renderPanel();}
 function stopLive(){if(isLive()) return liveStop();curRoom().playing=false;banner="現地の再生を停止しました";renderList();renderPanel();}
@@ -546,7 +546,7 @@ function renderAdd(){
     </div>`:''}
     <div><label style="font-size:12px;color:var(--color-text-secondary);display:block;margin-bottom:4px;">メモ（任意）</label>
       <input id="f_memo" placeholder="例: 終日 BGM / イベント用 など" style="width:100%;"></div>
-    <div style="font-size:11px;color:var(--color-text-tertiary);"><i class="ti ti-info-circle" style="vertical-align:-1px;"></i> ${isLive()?'登録するとそのまま機体クラウドに予約されます（噴霧はレシピの秒数・間隔は「噴霧の間隔」の設定）。予約は同時に1つ＝既存の予約は置き換わります':'「最初これ→30分後これ」の複数ステップ配信は本実装で対応予定（今は1香り）'}</div>
+    <div style="font-size:11px;color:var(--color-text-tertiary);"><i class="ti ti-info-circle" style="vertical-align:-1px;"></i> ${isLive()?'登録するとそのまま機体クラウドに予約されます（噴霧秒数・間隔は「噴霧サイクル設定」の値）。複数の枠を予約できます（同じ機体で時間が重なる場合だけ確認が出ます）':'「最初これ→30分後これ」の複数ステップ配信は本実装で対応予定（今は1香り）'}</div>
     <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:4px;">
       <button onclick="cancelTo()" style="font-size:13px;padding:8px 16px;cursor:pointer;border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-md);background:var(--color-background-primary);">キャンセル</button>
       <button onclick="saveAdd()" style="font-size:13px;padding:8px 18px;cursor:pointer;border:0.5px solid var(--color-border-info);color:var(--color-text-info);font-weight:500;border-radius:var(--border-radius-md);background:var(--color-background-primary);"><i class="ti ti-calendar-plus" style="vertical-align:-2px;"></i> 登録</button>
@@ -635,18 +635,20 @@ function liveArea(r){
 function scentIdOfStep(st){ const byUsf=Object.values(SCENTS).find(x=>x.usfId===st.sid); if(byUsf) return byUsf.id; const byName=KEYS.find(k=>LMAP[k].live&&LMAP[k].n===st.name); return byName||CALM; }
 function syncSessionSlot(){
   if(!isLive()) return; const r=curRoom(); const d=todayIdx(); r.sched[d]=(r.sched[d]||[]).filter(sl=>!sl.fromServer);
-  const ss=LIVE.session; if(!ss||!ss.steps||!ss.steps.length) return;
   const today=new Date(); const ds=today.getFullYear()+'-'+String(today.getMonth()+1).padStart(2,'0')+'-'+String(today.getDate()).padStart(2,'0');
-  if(ss.date!==ds || ss.state==='stopped' || ss.state==='done') return;
-  const steps=[...ss.steps].sort((a,b)=>t2m(a.start)-t2m(b.start));
-  const prog=steps.map(st=>[scentIdOfStep(st), Math.max(1,t2m(st.end)-t2m(st.start))]);
-  const label={scheduled:'予約済み',running:'実行中',paused:'一時停止中',done:'完了'}[ss.state]||'';
-  const sl=L(steps[0].start, steps[steps.length-1].end, prog, label); sl.fromServer=true;
-  // 同じ時間帯を手元で持っていたら（予約送信元の枠）サーバー版に置き換える
-  r.sched[d]=r.sched[d].filter(x=>!(x.s===sl.s&&x.e===sl.e));
-  r.sched[d].push(sl); r.sched[d].sort((a,b)=>t2m(a.s)-t2m(b.s));
-  if(mode==="room" && $("panel") && !$("liveCard")) return; 
+  for(const ss of (LIVE.sessions||[])){
+    if(!ss||!ss.steps||!ss.steps.length) continue;
+    if(ss.date!==ds || ss.state==='stopped' || ss.state==='done') continue;
+    const steps=[...ss.steps].sort((a,b)=>t2m(a.start)-t2m(b.start));
+    const prog=steps.map(st=>[scentIdOfStep(st), Math.max(1,t2m(st.end)-t2m(st.start))]);
+    const label={scheduled:'予約済み',running:'実行中',paused:'一時停止中'}[ss.state]||'';
+    const sl=L(steps[0].start, steps[steps.length-1].end, prog, label); sl.fromServer=true; sl.sessionId=ss.id;
+    r.sched[d]=r.sched[d].filter(x=>!(x.s===sl.s&&x.e===sl.e));
+    r.sched[d].push(sl);
+  }
+  r.sched[d].sort((a,b)=>t2m(a.s)-t2m(b.s));
 }
+function sessionOfSlot(sl){ return sl&&sl.sessionId ? (LIVE.sessions||[]).find(x=>x.id===sl.sessionId)||null : null; }
 
 // 今の状態（噴霧中 / インターバル中 / 停止中）— 1秒ごとに描き直す
 function fmtMMSS(sec){ sec=Math.max(0,Math.round(sec)); return Math.floor(sec/60)+':'+String(sec%60).padStart(2,'0'); }
@@ -682,7 +684,7 @@ async function livePoll(force){
       if(force || t-(LIVE.lastSt||0)>30000){ const uids=roomUids(curRoom()).filter(u=>LIVE.devices.find(d=>d.device_uid===u&&d.online));
         if(uids.length){ const s=await hub('/api/command',{method:'POST',body:JSON.stringify({uids,cmd:'get_status'})}); LIVE.status=LIVE.status||{}; (s.results||[]).forEach(x=>{ if(x.ok) LIVE.status[x.uid]=x.response; }); } LIVE.lastSt=t; }
     }
-    const sj=await hub('/api/session'); LIVE.session=sj.session; LIVE.now=sj.now_local; LIVE.offset=(sj.now||Date.now())-Date.now();
+    const sj=await hub('/api/session'); LIVE.session=sj.session; LIVE.sessions=sj.sessions||(sj.session?[sj.session]:[]); LIVE.now=sj.now_local; LIVE.offset=(sj.now||Date.now())-Date.now();
     // 手動「再生」の噴霧中はそちらを優先（サーバーのセッションとは独立）
     if(LIVE.manualUntil && Date.now()+LIVE.offset<LIVE.manualUntil){ LIVE.phase='spraying'; LIVE.sprayUntil=LIVE.manualUntil; LIVE.sprayStarted=LIVE.manualStart; }
     else { LIVE.manualUntil=null; LIVE.phase=sj.phase||'idle'; LIVE.sprayUntil=sj.spray_until||null; LIVE.sprayStarted=sj.spray_started||null; }
@@ -706,14 +708,14 @@ async function liveBurst(){
 async function liveStop(){
   const r=curRoom(), uids=roomUids(r);
   try{ const active=LIVE.session&&(LIVE.session.state==='running'||LIVE.session.state==='scheduled');
-    if(active) await hub('/api/session/pause',{method:'POST',body:'{}'});
+    if(active) await hub('/api/session/pause',{method:'POST',body:JSON.stringify({id:LIVE.session.id})});
     if(uids.length) await hub('/api/session/stop-devices',{method:'POST',body:JSON.stringify({uids})});
     r.playing=false; banner=active?"現地の機体を停止しました。予約は一時停止中（「再開」で次の噴霧タイミングから続きます）":"現地の機体を停止しました"; }
   catch(e){ banner="停止失敗: "+e.message; }
   await livePoll(true); renderList(); renderPanel();
 }
-async function liveResume(){ try{ await hub('/api/session/resume',{method:'POST',body:'{}'}); banner="予約を再開しました。次の噴霧タイミングから続きます"; }catch(e){ banner="再開失敗: "+e.message; } await livePoll(true); renderPanel(); }
-async function liveCancel(){ try{ await hub('/api/session/stop',{method:'POST',body:'{}'}); banner="予約を取り消し、機体を停止しました"; }catch(e){ banner="取り消し失敗: "+e.message; } selSlot=null; await livePoll(true); renderPanel(); }
+async function liveResume(id){ try{ await hub('/api/session/resume',{method:'POST',body:JSON.stringify(id?{id}:{})}); banner="予約を再開しました。次の噴霧タイミングから続きます"; }catch(e){ banner="再開失敗: "+e.message; } await livePoll(true); renderPanel(); }
+async function liveCancel(id){ try{ await hub('/api/session/stop',{method:'POST',body:JSON.stringify(id?{id}:{})}); banner="予約を取り消し、機体を停止しました"; }catch(e){ banner="取り消し失敗: "+e.message; } selSlot=null; await livePoll(true); renderPanel(); }
 async function liveSchedule(){
   const r=curRoom(), sl=r.sched[di][selSlot], uids=roomUids(r);
   if(!uids.length){ banner="機体が割り当てられていません"; return renderPanel(); }
@@ -724,9 +726,14 @@ async function liveSchedule(){
   const on=steps.map(s=>s.burstSec+'秒').join('/');
   const today=new Date(), date=today.getFullYear()+'-'+String(today.getMonth()+1).padStart(2,'0')+'-'+String(today.getDate()).padStart(2,'0');
   if(di!==todayIdx()){ banner="予約送信は「今日」の曜日タブの枠だけ対応（今日="+DAYS[todayIdx()]+"）"; return renderPanel(); }
-  const ex=LIVE.session&&(LIVE.session.state==='scheduled'||LIVE.session.state==='running'||LIVE.session.state==='paused')?LIVE.session:null;
-  if(!confirm(`${TENANTS[ti].stores[si].name} / ${r.name}\n${steps.map(s=>s.start+'–'+s.end+' '+s.name+'（'+s.burstSec+'秒 / '+gap+'分ごと）').join('\n')}\n\n機体 ${uids.length}台に予約送信します。${ex?'\n⚠ 既存の予約（'+ex.steps[0].start+'〜'+ex.steps[ex.steps.length-1].end+'）は置き換わります。':''}よろしいですか？`)) return;
-  try{ await hub('/api/session',{method:'POST',body:JSON.stringify({uids,steps,date,label:TENANTS[ti].name+' '+TENANTS[ti].stores[si].name})});
+  if(!confirm(`${TENANTS[ti].stores[si].name} / ${r.name}\n${steps.map(s=>s.start+'–'+s.end+' '+s.name+'（'+s.burstSec+'秒 / '+gap+'分ごと）').join('\n')}\n\n機体 ${uids.length}台に予約送信します。よろしいですか？`)) return;
+  const body={uids,steps,date,label:TENANTS[ti].name+' '+TENANTS[ti].stores[si].name};
+  try{
+    let resp=await fetch(HUB+'/api/session',{method:'POST',credentials:'include',headers:{'content-type':'application/json'},body:JSON.stringify(body)});
+    if(resp.status===409){ const j=await resp.json();
+      if(!confirm('同じ機体で '+(j.overlap||[]).map(o=>o.start+'–'+o.end).join(', ')+' の予約と時間が重なっています。\nその予約を取り消して、この枠に置き換えますか？')){ banner="予約を送信しませんでした（時間が重なる予約があります）"; selSlot=null; return renderPanel(); }
+      resp=await fetch(HUB+'/api/session',{method:'POST',credentials:'include',headers:{'content-type':'application/json'},body:JSON.stringify({...body,replace:true})}); }
+    if(!resp.ok){ const j=await resp.json().catch(()=>({})); throw new Error(j.error||resp.statusText); }
     banner=`${sl.s}–${sl.e} の配信をクラウドに予約しました。開始時刻に自動で噴霧が始まります`; }
   catch(e){ banner="予約失敗: "+e.message; }
   selSlot=null; await livePoll(true); renderPanel();
