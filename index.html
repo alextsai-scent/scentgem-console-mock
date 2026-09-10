@@ -414,7 +414,7 @@ function statusArea(){
           :`<button onclick="playLive()" class="btn btn-primary" style="font-size:13px;padding:8px 18px;cursor:pointer;font-weight:600;border-radius:var(--border-radius-md);"><i class="ti ti-player-play" style="font-size:14px;vertical-align:-2px;"></i> 再生</button>`}
       </div>
     </div>
-    <div style="font-size:11px;color:var(--color-text-tertiary);margin-top:9px;"><i class="ti ti-bolt" style="vertical-align:-1px;"></i> ${isLive()&&LIVE.session&&(LIVE.session.state==='running'||LIVE.session.state==='scheduled'||LIVE.session.state==='paused')?'予約 '+({scheduled:'開始待ち',running:'実行中',paused:'一時停止中'}[LIVE.session.state])+(LIVE.session.next_burst_local?' ・ 次の噴霧 '+LIVE.session.next_burst_local:'')+' ／ 下の枠をタップで詳細':'「再生」を押すと現地の ScentGem に配信が届きます ／ 下の枠をタップで個別編集'}</div>
+    <div id="nowLine" style="font-size:11px;color:var(--color-text-tertiary);margin-top:9px;">${nowLineHtml()}</div>
   </div>`;
 }
 
@@ -662,7 +662,14 @@ function liveNowHtml(){
   if(ss && ss.state==='paused') return bar(0,'var(--color-text-secondary)','一時停止中','枠をタップして「▶ 再開」で続きから');
   return `<div style="font-size:12px;color:var(--color-text-tertiary);margin-bottom:6px;">■ 停止中 ・ 再生すると ${fmtDur(on)} 噴霧、予約中は ${g}分ごとに繰り返し</div><div style="display:flex;align-items:center;height:10px;border-radius:999px;overflow:hidden;background:var(--color-background-tertiary);">${sprayViz(on,g)}</div>`;
 }
-function liveTick(){ const el=$("liveNow"); if(el && isLive()){ el.innerHTML=liveNowHtml(); } }
+
+function nowLineHtml(){ const ss=LIVE.session; const ic='<i class="ti ti-bolt" style="vertical-align:-1px;"></i> ';
+  if(!(isLive()&&ss&&(ss.state==='running'||ss.state==='scheduled'||ss.state==='paused'))) return ic+'「再生」を押すと現地の ScentGem に配信が届きます ／ 下の枠をタップで個別編集';
+  const now=Date.now()+(LIVE.offset||0); const cur=ss.current_step!=null?ss.steps[ss.current_step]:null;
+  if(LIVE.phase==='spraying'&&LIVE.sprayUntil&&LIVE.sprayUntil>now) return ic+'予約 実行中 ・ 噴霧中（残り '+Math.ceil((LIVE.sprayUntil-now)/1000)+'秒） ／ 下の枠をタップで詳細';
+  const st={scheduled:'開始待ち',running:'実行中',paused:'一時停止中'}[ss.state];
+  return ic+'予約 '+st+(ss.next_burst?' ・ 次の噴霧まで '+fmtMMSS((ss.next_burst-now)/1000)+'（'+(ss.next_burst_local||'')+'）':'')+(cur?' ・ '+cur.name+' '+cur.start+'–'+cur.end:'')+' ／ 下の枠をタップで詳細'; }
+function liveTick(){ if(!isLive()) return; const el=$("liveNow"); if(el) el.innerHTML=liveNowHtml(); const nl=$("nowLine"); if(nl) nl.innerHTML=nowLineHtml(); }
 setInterval(liveTick,1000);
 function paintLive(){ if(!isLive()||mode!=="room") return; const el=$("liveCard"); if(el) el.innerHTML=liveArea(curRoom()); const h=$("idLine"); if(h) h.innerHTML=liveIdLine(curRoom()); }
 async function livePoll(force){
@@ -680,9 +687,11 @@ async function livePoll(force){
     if(LIVE.manualUntil && Date.now()+LIVE.offset<LIVE.manualUntil){ LIVE.phase='spraying'; LIVE.sprayUntil=LIVE.manualUntil; LIVE.sprayStarted=LIVE.manualStart; }
     else { LIVE.manualUntil=null; LIVE.phase=sj.phase||'idle'; LIVE.sprayUntil=sj.spray_until||null; LIVE.sprayStarted=sj.spray_started||null; }
     syncSessionSlot();
-    const r=curRoom(); if(LIVE.session){ r.playing=LIVE.session.state==='running'; }
+    const r=curRoom(); if(LIVE.session){ const ss=LIVE.session; r.playing=ss.state==='running';
+      if(ss.state==='running'||ss.state==='scheduled'||ss.state==='paused'){ const st=ss.current_step!=null?ss.steps[ss.current_step]:(ss.next_step!=null?ss.steps[ss.next_step]:null);
+        if(st){ const k=scentIdOfStep(st); if(k&&k!==r.scent){ r.scent=k; LIVE.scentChanged=true; } } } }
   }catch(e){ LIVE.err=LIVE.err||e.message; }
-  finally{ LIVE.busy=false; const sig=JSON.stringify((curRoom().sched[todayIdx()]||[]).map(x=>[x.s,x.e,x.memo])); if(sig!==LIVE.lastSig){ LIVE.lastSig=sig; if(mode==="room") renderPanel(); } else paintLive(); if($("roomlist")) renderList(); }
+  finally{ LIVE.busy=false; const sig=JSON.stringify((curRoom().sched[todayIdx()]||[]).map(x=>[x.s,x.e,x.memo])); const changed=(sig!==LIVE.lastSig)||LIVE.scentChanged; LIVE.lastSig=sig; LIVE.scentChanged=false; if(changed){ if(mode==="room") renderPanel(); } else paintLive(); if($("roomlist")) renderList(); }
 }
 function liveStart(){ if(LIVE.timer) clearInterval(LIVE.timer); LIVE.timer=setInterval(()=>livePoll(false),5000); livePoll(true); }
 async function liveBurst(){
